@@ -1,3 +1,4 @@
+import pandas as pd
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
 from logger import log_to_csv
@@ -7,47 +8,53 @@ def analyze_symbol(symbol, df):
     df["ema9"] = calculate_ema(df["close"], period=9)
     df["ema21"] = calculate_ema(df["close"], period=21)
     df["rsi"] = calculate_rsi(df["close"], period=14)
-    df["patterns"] = detect_candle_patterns(df)
 
-    last_row = df.iloc[-1]
+    patterns = detect_candle_patterns(df)
+    df = pd.concat([df, patterns], axis=1)
 
-    score = 0
-    reasons = []
+    fib_levels = calculate_fibonacci_levels(df)
+    fib_match = match_fibonacci_price(df, fib_levels)
 
-    if last_row["ema9"] > last_row["ema21"]:
-        score += 1
-        reasons.append("EMA9 > EMA21")
-
-    if last_row["rsi"] > 55:
-        score += 1
-        reasons.append("RSI > 55")
-
-    if isinstance(last_row["patterns"], str) and last_row["patterns"]:
-        score += 1
-        reasons.append(f"Pattern: {last_row['patterns']}")
-
-    fib = calculate_fibonacci_levels(df)
-    matched_level = match_fibonacci_price(last_row["close"], fib)
-    if matched_level:
-        score += 1
-        reasons.append(f"Fibonacci near {matched_level}")
-
-    if score >= 3:
-        signal = "BUY"
-    elif score <= 1:
-        signal = "SELL"
-    else:
-        signal = "WAIT"
-
-    log_to_csv(symbol, signal, score, reasons)
-    return {
+    latest = df.iloc[-1]
+    signal = {
         "symbol": symbol,
-        "score": score,
-        "signal": signal,
-        "rsi": last_row["rsi"],
-        "ema9": last_row["ema9"],
-        "ema21": last_row["ema21"],
-        "pattern": last_row["patterns"],
-        "reasons": reasons,
-        "timestamp": str(last_row.name)
+        "timeframe": "H1",
+        "timestamp": latest.name.strftime("%Y-%m-%d %H:%M"),
+        "ema9": latest["ema9"],
+        "ema21": latest["ema21"],
+        "rsi": latest["rsi"],
+        "pattern": latest.get("pattern", "None"),
+        "score": 0,
+        "reasons": []
     }
+
+    # Simple logic for scoring
+    if latest["ema9"] > latest["ema21"]:
+        signal["score"] += 1
+        signal["reasons"].append("EMA9 > EMA21")
+
+    if latest["rsi"] < 30:
+        signal["score"] += 1
+        signal["reasons"].append("RSI oversold")
+    elif latest["rsi"] > 70:
+        signal["score"] -= 1
+        signal["reasons"].append("RSI overbought")
+
+    if signal["pattern"] != "None":
+        signal["score"] += 1
+        signal["reasons"].append(f"Pattern: {signal['pattern']}")
+
+    if fib_match:
+        signal["score"] += 1
+        signal["reasons"].append("Price at Fib Level")
+
+    # Final classification
+    if signal["score"] >= 3:
+        signal["signal"] = "BUY"
+    elif signal["score"] <= -2:
+        signal["signal"] = "SELL"
+    else:
+        signal["signal"] = "NEUTRAL"
+
+    log_to_csv(signal)
+    return signal
