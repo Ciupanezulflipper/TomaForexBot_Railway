@@ -15,7 +15,7 @@ def analyze_symbol(symbol, df):
     # ✅ clean float values
     high_val = float(df["high"].values[-200:].max())
     low_val = float(df["low"].values[-200:].min())
-    last_price = float(df["close"].values[-1])
+    last_price = float(df["close"].iloc[-1])
 
     fib_levels = calculate_fibonacci_levels(high=high_val, low=low_val)
     fib_match = match_fibonacci_price(last_price, fib_levels)
