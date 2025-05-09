@@ -17,9 +17,9 @@ def analyze_symbol(symbol, df):
         low=df["low"].min()
     )
 
-    # ✅ FIXED: extract last close price as scalar
     last_price = df["close"].iloc[-1]
-last_price = float(last_price.values[0]) if hasattr(last_price, "values") else float(last_price)
+    last_price = float(last_price.values[0]) if hasattr(last_price, "values") else float(last_price)
+
     fib_match = match_fibonacci_price(last_price, fib_levels)
 
     latest = df.iloc[-1]
@@ -35,7 +35,6 @@ last_price = float(last_price.values[0]) if hasattr(last_price, "values") else f
         "reasons": []
     }
 
-    # Scoring logic
     if latest["ema9"] > latest["ema21"]:
         signal["score"] += 1
         signal["reasons"].append("EMA9 > EMA21")
