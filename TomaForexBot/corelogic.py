@@ -1,59 +1,54 @@
-# corelogic.py
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
-from logger import log_to_csv  # send_telegram_alert removed for Railway
+from logger import log_to_csv
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 
-def analyze_symbol(df, symbol, score_threshold=4):
-   df = calculate_ema(df, 9, 21)
+def analyze_symbol(symbol, df):
+    df = calculate_ema(df, 9, 21)
     df = calculate_rsi(df, period=14)
-    df = detect_candle_patterns(df)
-
-    if df is None or df.empty:
-        return []
+    df["patterns"] = detect_candle_patterns(df)
 
     last_row = df.iloc[-1]
-    price = last_row['close']
+
     score = 0
     reasons = []
 
-    if last_row['EMA9'] > last_row['EMA21']:
+    # Example scoring
+    if last_row["ema9"] > last_row["ema21"]:
         score += 1
-        reasons.append('EMA9 > EMA21')
-    elif last_row['EMA9'] < last_row['EMA21']:
+        reasons.append("EMA9 > EMA21")
+
+    if last_row["rsi"] > 55:
         score += 1
-        reasons.append('EMA9 < EMA21')
+        reasons.append("RSI above 55")
 
-    if 30 < last_row['RSI'] < 70:
+    if isinstance(last_row["patterns"], str) and last_row["patterns"]:
         score += 1
-        reasons.append('RSI neutral')
+        reasons.append(f"Pattern: {last_row['patterns']}")
 
-    if last_row.get('pattern') in ['Doji', 'Hammer', 'Engulfing']:
+    fib = calculate_fibonacci_levels(df)
+    matched_level = match_fibonacci_price(last_row["close"], fib)
+    if matched_level:
         score += 1
-        reasons.append('strong pattern')
+        reasons.append(f"Fibonacci near {matched_level}")
 
-    fib_levels = calculate_fibonacci_levels(df)
-    fib_label, _ = match_fibonacci_price(price, fib_levels)
+    signal = None
+    if score >= 3:
+        signal = "BUY"
+    elif score <= 1:
+        signal = "SELL"
+    else:
+        signal = "WAIT"
 
-    if fib_label:
-        score += 1
-        reasons.append(f"near {fib_label} Fib level")
-
-    if score >= score_threshold:
-        direction = 'BUY' if last_row['EMA9'] > last_row['EMA21'] else 'SELL'
-        emoji = '📈' if direction == 'BUY' else '📉'
-        signal = {
-            "symbol": symbol,
-            "signal": direction,
-            "emoji": emoji,
-            "pattern": last_row.get("pattern", ""),
-            "rsi": round(last_row['RSI'], 2),
-            "ema9": round(last_row['EMA9'], 4),
-            "ema21": round(last_row['EMA21'], 4),
-            "score": score,
-            "reasons": reasons
-        }
-        log_to_csv(signal)
-        send_telegram_alert(f"{emoji} {direction} Signal for {symbol}\nPattern: {signal['pattern']}\nRSI: {signal['rsi']} | EMA9: {signal['ema9']} | EMA21: {signal['ema21']}\nScore: {score} ✅\nReasons: {', '.join(reasons)}")
-        return [signal]
-    return []
+    log_to_csv(symbol, signal, score, reasons)
+    return {
+        "symbol": symbol,
+        "score": score,
+        "signal": signal,
+        "rsi": last_row["rsi"],
+        "ema9": last_row["ema9"],
+        "ema21": last_row["ema21"],
+        "pattern": last_row["patterns"],
+        "reasons": reasons,
+        "timestamp": str(last_row.name)
+    }
