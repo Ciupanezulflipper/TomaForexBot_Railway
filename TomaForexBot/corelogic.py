@@ -12,8 +12,11 @@ def analyze_symbol(symbol, df):
     patterns = detect_candle_patterns(df)
     df = pd.concat([df, patterns], axis=1)
 
-    fib_levels = calculate_fibonacci_levels(df)
-    fib_match = match_fibonacci_price(df, fib_levels)
+    fib_levels = calculate_fibonacci_levels(
+        high=df["high"].max(),
+        low=df["low"].min()
+    )
+    fib_match = match_fibonacci_price(df["close"].iloc[-1], fib_levels)
 
     latest = df.iloc[-1]
     signal = {
@@ -28,7 +31,7 @@ def analyze_symbol(symbol, df):
         "reasons": []
     }
 
-    # Simple logic for scoring
+    # Scoring logic
     if latest["ema9"] > latest["ema21"]:
         signal["score"] += 1
         signal["reasons"].append("EMA9 > EMA21")
@@ -48,7 +51,7 @@ def analyze_symbol(symbol, df):
         signal["score"] += 1
         signal["reasons"].append("Price at Fib Level")
 
-    # Final classification
+    # Final signal
     if signal["score"] >= 3:
         signal["signal"] = "BUY"
     elif signal["score"] <= -2:
