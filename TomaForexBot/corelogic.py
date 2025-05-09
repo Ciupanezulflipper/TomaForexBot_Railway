@@ -4,8 +4,9 @@ from logger import log_to_csv
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 
 def analyze_symbol(symbol, df):
-    df = calculate_ema(df, 9, 21)
-    df = calculate_rsi(df, period=14)
+    df["ema9"] = calculate_ema(df["close"], period=9)
+    df["ema21"] = calculate_ema(df["close"], period=21)
+    df["rsi"] = calculate_rsi(df["close"], period=14)
     df["patterns"] = detect_candle_patterns(df)
 
     last_row = df.iloc[-1]
@@ -13,14 +14,13 @@ def analyze_symbol(symbol, df):
     score = 0
     reasons = []
 
-    # Example scoring
     if last_row["ema9"] > last_row["ema21"]:
         score += 1
         reasons.append("EMA9 > EMA21")
 
     if last_row["rsi"] > 55:
         score += 1
-        reasons.append("RSI above 55")
+        reasons.append("RSI > 55")
 
     if isinstance(last_row["patterns"], str) and last_row["patterns"]:
         score += 1
@@ -32,7 +32,6 @@ def analyze_symbol(symbol, df):
         score += 1
         reasons.append(f"Fibonacci near {matched_level}")
 
-    signal = None
     if score >= 3:
         signal = "BUY"
     elif score <= 1:
