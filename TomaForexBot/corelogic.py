@@ -13,17 +13,8 @@ def analyze_symbol(symbol, df):
     df = pd.concat([df, patterns], axis=1)
 
     # ✅ Clean high/low as float
-    try:
-        high_val = float(df["high"].max().item())
-    except:
-        high_val = float(df["high"].max())
-
-    try:
-        low_val = float(df["low"].min().item())
-    except:
-        low_val = float(df["low"].min())
-
-    fib_levels = calculate_fibonacci_levels(high=high_val, low=low_val)
+   high_val = df["high"].values.flatten()[-200:].max()
+low_val = df["low"].values.flatten()[-200:].min()
 
     # ✅ Clean last price
     try:
