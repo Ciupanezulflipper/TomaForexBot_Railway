@@ -16,7 +16,10 @@ def analyze_symbol(symbol, df):
         high=df["high"].max(),
         low=df["low"].min()
     )
-    fib_match = match_fibonacci_price(df["close"].iloc[-1], fib_levels)
+
+    # ✅ FIXED: extract last close price as scalar
+    last_price = float(df["close"].iat[-1])
+    fib_match = match_fibonacci_price(last_price, fib_levels)
 
     latest = df.iloc[-1]
     signal = {
@@ -49,9 +52,8 @@ def analyze_symbol(symbol, df):
 
     if fib_match:
         signal["score"] += 1
-        signal["reasons"].append("Price at Fib Level")
+        signal["reasons"].append(f"Price at Fib Level: {fib_match}")
 
-    # Final signal
     if signal["score"] >= 3:
         signal["signal"] = "BUY"
     elif signal["score"] <= -2:

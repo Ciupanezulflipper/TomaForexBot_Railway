@@ -1,3 +1,6 @@
+import pandas as pd
+import numpy as np
+
 def calculate_fibonacci_levels(high, low):
     diff = high - low
     return {
@@ -9,8 +12,16 @@ def calculate_fibonacci_levels(high, low):
         "100.0%": low,
     }
 
-def match_fibonacci_price(price, levels, threshold=0.001):
-    for label, level in levels.items():
-        if abs(price - level) <= threshold:
+def match_fibonacci_price(price, fib_levels, threshold=0.001):
+    # Ensure price is a scalar float
+    if isinstance(price, pd.Series):
+        price_val = float(price.iloc[-1])
+    elif isinstance(price, np.ndarray):
+        price_val = float(price[-1])
+    else:
+        price_val = float(price)
+
+    for label, level in fib_levels.items():
+        if abs(price_val - float(level)) <= threshold:
             return label
     return None
