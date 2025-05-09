@@ -1,6 +1,6 @@
 # analyzers.py
 
-from marketdata import get_ohlc
+from marketdata import get_mt5_data  # now mapped to mock data
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
 from charting import generate_pro_chart
