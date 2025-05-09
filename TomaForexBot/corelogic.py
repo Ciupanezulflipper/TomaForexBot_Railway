@@ -12,16 +12,12 @@ def analyze_symbol(symbol, df):
     patterns = detect_candle_patterns(df)
     df = pd.concat([df, patterns], axis=1)
 
-    # ✅ Clean high/low as float
-   high_val = df["high"].values.flatten()[-200:].max()
-low_val = df["low"].values.flatten()[-200:].min()
+    # ✅ clean float values
+    high_val = float(df["high"].values[-200:].max())
+    low_val = float(df["low"].values[-200:].min())
+    last_price = float(df["close"].values[-1])
 
-    # ✅ Clean last price
-    try:
-        last_price = float(df["close"].iloc[-1].item())
-    except:
-        last_price = float(df["close"].iloc[-1])
-
+    fib_levels = calculate_fibonacci_levels(high=high_val, low=low_val)
     fib_match = match_fibonacci_price(last_price, fib_levels)
 
     latest = df.iloc[-1]
