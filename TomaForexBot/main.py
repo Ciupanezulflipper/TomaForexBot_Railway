@@ -1,36 +1,37 @@
+from telegrambot import send_telegram_message
+from corelogic import analyze_symbol
+import pandas as pd
+import datetime
 
-import asyncio
-import time
-from marketdata import connect, get_mt5_data
-from botstrategies import symbol_strategies
-from telegrambot import start_telegram_listener, send_telegram_message
+def get_mock_data():
+    # Simulated OHLCV data (replace this with a real API or CSV if needed)
+    now = datetime.datetime.now()
+    data = {
+        'time': [now - datetime.timedelta(hours=i) for i in range(200)],
+        'open': [1.1 + i * 0.01 for i in range(200)],
+        'high': [1.2 + i * 0.01 for i in range(200)],
+        'low': [1.0 + i * 0.01 for i in range(200)],
+        'close': [1.15 + i * 0.01 for i in range(200)],
+        'tick_volume': [1000 for _ in range(200)],
+    }
+    df = pd.DataFrame(data)
+    df = df[::-1].reset_index(drop=True)  # reverse to match historical order
+    return df
 
-# ✅ Launch Telegram listener (runs async)
-async def main():
-    print("🤖 Bot is running... sending help menu to Telegram.")
-    await send_telegram_message("🤖 TomaForexBot is now running...")
-    await start_telegram_listener()
+def main():
+    symbol = "SIMULATED"
+    timeframe = "H1"
+    df = get_mock_data()
 
-# ✅ Connect to MT5
-if not connect():
-    print("❌ Failed to connect to MetaTrader 5")
-    exit()
+    print(f"Analyzing {symbol} on timeframe {timeframe}")
+    signal = analyze_symbol(symbol, df)
 
-# ✅ Run Telegram bot listener in background
-loop = asyncio.get_event_loop()
-loop.create_task(main())
+    if signal:
+        message = f"📈 Signal for {symbol} on {timeframe}:\n\n{signal}"
+        print(message)
+        send_telegram_message(message)
+    else:
+        print("No signal detected.")
 
-# ✅ Scheduled signal analysis loop
-while True:
-    print("🔄 Running scheduled analysis...")
-    for symbol, analyzer in symbol_strategies.items():
-        df = get_mt5_data(symbol, timeframe=mt5.TIMEFRAME_H1, bars=200)
-        if df is not None and not df.empty:
-            try:
-                asyncio.run(analyzer(df, symbol))
-            except Exception as e:
-                print(f"⚠️ Error analyzing {symbol}: {e}")
-        else:
-            print(f"❌ No data returned for {symbol}")
-    print("✅ Analysis complete. Waiting 15 minutes...\n")
-    time.sleep(900)
+if __name__ == "__main__":
+    main()
