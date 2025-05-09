@@ -1,4 +1,4 @@
-import MetaTrader5 as mt5
+
 import asyncio
 import time
 from marketdata import connect, get_mt5_data
