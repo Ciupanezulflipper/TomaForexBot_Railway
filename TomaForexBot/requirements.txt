@@ -1,0 +1,5 @@
+python-telegram-bot==20.7
+MetaTrader5==5.0.4874
+pandas==2.2.1
+mplfinance==0.12.10b0
+python-dotenv==1.0.1
