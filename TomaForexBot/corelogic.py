@@ -12,9 +12,13 @@ def analyze_symbol(symbol, df):
     patterns = detect_candle_patterns(df)
     df = pd.concat([df, patterns], axis=1)
 
-    fib_levels = calculate_fibonacci_levels(
-        high=df["high"].max(),
-        low=df["low"].min()
+    high_val = df["high"].max()
+low_val = df["low"].min()
+
+high_val = float(high_val.values[0]) if hasattr(high_val, "values") else float(high_val)
+low_val = float(low_val.values[0]) if hasattr(low_val, "values") else float(low_val)
+
+fib_levels = calculate_fibonacci_levels(high=high_val, low=low_val)
     )
 
     last_price = df["close"].iloc[-1]
