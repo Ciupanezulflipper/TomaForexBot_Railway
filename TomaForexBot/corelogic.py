@@ -18,7 +18,8 @@ def analyze_symbol(symbol, df):
     )
 
     # ✅ FIXED: extract last close price as scalar
-    last_price = float(df["close"].iloc[-1])
+    last_price = df["close"].iloc[-1]
+last_price = float(last_price.values[0]) if hasattr(last_price, "values") else float(last_price)
     fib_match = match_fibonacci_price(last_price, fib_levels)
 
     latest = df.iloc[-1]
