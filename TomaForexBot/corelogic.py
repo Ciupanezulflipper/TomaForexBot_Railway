@@ -1,7 +1,7 @@
 # corelogic.py
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
-from logger import log_to_csv, send_telegram_alert
+from logger import log_to_csv  # send_telegram_alert removed for Railway
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 
 def analyze_symbol(df, symbol, score_threshold=4):
