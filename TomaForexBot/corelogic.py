@@ -5,7 +5,7 @@ from logger import log_to_csv  # send_telegram_alert removed for Railway
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 
 def analyze_symbol(df, symbol, score_threshold=4):
-    df = calculate_ema(df, short=9, long=21)
+   df = calculate_ema(df, 9, 21)
     df = calculate_rsi(df, period=14)
     df = detect_candle_patterns(df)
 
