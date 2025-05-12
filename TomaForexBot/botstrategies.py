@@ -61,13 +61,11 @@ async def analyze_symbol(df, symbol, timeframe="H1"):
         "reasons": "; ".join(reasons),
     }
 
-    # Generate chart (optional chart_path usage in Telegram)
     generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
-
     log_to_csv(signal_data)
     return [signal_data]
 
-# 🔹 Used by /gold, /us30
+# 🔹 For single-symbol handlers like /gold, /us30, /silver
 async def analyze_symbol_single(symbol, timeframe="H1"):
     df = get_mt5_data(symbol, timeframe, bars=200)
     if df is None or df.empty:
@@ -87,7 +85,7 @@ async def analyze_symbol_single(symbol, timeframe="H1"):
         f"Reasons: {r['reasons']}"
     )
 
-# 🔹 Used by /analyze (multi-symbol)
+# 🔹 Used by /analyze for standard symbol set
 async def analyze_all_symbols():
     symbols = ["XAUUSD", "XAGUSD", "EURUSD", "US30", "GBPJPY"]
     messages = []
@@ -114,6 +112,7 @@ async def analyze_all_symbols():
 
     return messages
 
+# 🔹 Used by /scanall for full 20+ symbol check
 async def analyze_many_symbols():
     symbols = [
         "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
@@ -123,18 +122,22 @@ async def analyze_many_symbols():
     messages = []
 
     for symbol in symbols:
+        print(f"🔍 Scanning {symbol}...")
         df = get_mt5_data(symbol, timeframe="H1", bars=200)
         if df is None or df.empty:
+            print(f"❌ No data for {symbol}")
             messages.append(f"❌ {symbol}: No data")
             continue
 
         results = await analyze_symbol(df, symbol, "H1")
         if not results:
+            print(f"❌ No signal for {symbol}")
             messages.append(f"❌ {symbol}: No signal")
             continue
 
         r = results[0]
         emoji = "📈" if r["signal"] == "BUY" else "📉"
+        print(f"✅ Signal for {symbol}: {r['signal']} | Score: {r['score']}")
         messages.append(
             f"{emoji} {r['symbol']} ({r['timeframe']})\n"
             f"Signal: {r['signal']} | Score: {r['score']}\n"
@@ -143,4 +146,3 @@ async def analyze_many_symbols():
         )
 
     return messages
-
