@@ -5,7 +5,7 @@ from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
 from marketdata import get_mt5_data
-from telegrambot import send_telegram_message, send_telegram_photo
+from telegramsender import send_telegram_message, send_telegram_photo
 
 async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
     if df is None or df.empty:
