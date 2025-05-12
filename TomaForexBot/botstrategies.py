@@ -5,67 +5,97 @@ from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
 from marketdata import get_mt5_data
+from telegrambot import send_telegram_message, send_telegram_photo
 
-# 🔍 Core analysis function
-async def analyze_symbol(df, symbol, timeframe="H1"):
+async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
     if df is None or df.empty:
+        print(f"❌ No data returned for {symbol}")
         return []
 
-    df = calculate_ema(df)
-    df = calculate_rsi(df)
-    df = detect_candle_patterns(df)
+    try:
+        print(f"🔧 [1] Starting analysis for {symbol}")
+        df = calculate_ema(df)
+        print(f"✅ [2] EMA calculated for {symbol}")
 
-    last = df.iloc[-1]
-    score = 0
-    reasons = []
+        df = calculate_rsi(df)
+        print(f"✅ [3] RSI calculated for {symbol}")
 
-    if last["EMA9"] > last["EMA21"]:
-        score += 1
-        reasons.append("EMA9 > EMA21")
-    elif last["EMA9"] < last["EMA21"]:
-        score += 1
-        reasons.append("EMA9 < EMA21")
+        df = detect_candle_patterns(df)
+        print(f"✅ [4] Candle patterns detected for {symbol}")
 
-    if last["RSI"] < 30:
-        score += 1
-        reasons.append("RSI oversold")
-    elif last["RSI"] > 70:
-        score += 1
-        reasons.append("RSI overbought")
-    else:
-        reasons.append("RSI neutral")
+        last = df.iloc[-1]
+        score = 0
+        reasons = []
 
-    fib_levels = calculate_fibonacci_levels(high=df["high"].max(), low=df["low"].min())
-    fib_match = match_fibonacci_price(last["close"], fib_levels)
-    if fib_match:
-        score += 1
-        reasons.append(f"near {fib_match} Fib level")
+        if last["EMA9"] > last["EMA21"]:
+            score += 1
+            reasons.append("EMA9 > EMA21")
+        elif last["EMA9"] < last["EMA21"]:
+            score += 1
+            reasons.append("EMA9 < EMA21")
 
-    pattern = last.get("Pattern", "None")
-    if pattern and pattern != "None":
-        score += 1
-        reasons.append(f"Pattern: {pattern}")
+        if last["RSI"] < 30:
+            score += 1
+            reasons.append("RSI oversold")
+        elif last["RSI"] > 70:
+            score += 1
+            reasons.append("RSI overbought")
+        else:
+            reasons.append("RSI neutral")
 
-    signal = "BUY" if last["EMA9"] > last["EMA21"] and last["RSI"] < 70 else "SELL"
+        fib_levels = calculate_fibonacci_levels(high=df["high"].max(), low=df["low"].min())
+        fib_match = match_fibonacci_price(last["close"], fib_levels)
+        if fib_match:
+            score += 1
+            reasons.append(f"near {fib_match} Fib level")
 
-    signal_data = {
-        "timestamp": pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M"),
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "signal": signal,
-        "score": score,
-        "pattern": pattern,
-        "rsi": last["RSI"],
-        "ema9": last["EMA9"],
-        "ema21": last["EMA21"],
-        "reasons": "; ".join(reasons),
-    }
+        pattern = last.get("Pattern", "None")
+        if pattern and pattern != "None":
+            score += 1
+            reasons.append(f"Pattern: {pattern}")
 
-    generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
-    log_to_csv(signal_data)
-    return [signal_data]
+        signal = "BUY" if last["EMA9"] > last["EMA21"] and last["RSI"] < 70 else "SELL"
+        emoji = "📈" if signal == "BUY" else "📉"
 
-# 🔹 For single-symbol handlers like /gold, /us30, /silver
+        signal_data = {
+            "timestamp": pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "signal": signal,
+            "score": score,
+            "pattern": pattern,
+            "rsi": last["RSI"],
+            "ema9": last["EMA9"],
+            "ema21": last["EMA21"],
+            "reasons": "; ".join(reasons),
+        }
+
+        print(f"✅ [5] Signal scoring complete for {symbol}")
+
+        chart_path = generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
+        print(f"✅ [6] Chart generated for {symbol}")
+
+        if score >= 3:
+            msg = (
+                f"{emoji} {signal_data['timestamp']} – {symbol} ({timeframe})\n"
+                f"Signal: {signal} | Score: {score}\n"
+                f"Pattern: {pattern}\n"
+                f"RSI: {last['RSI']:.2f} | EMA9: {last['EMA9']:.4f} | EMA21: {last['EMA21']:.4f}\n"
+                f"Reasons: {'; '.join(reasons)}"
+            )
+            await send_telegram_message(msg)
+            if chart_path:
+                await send_telegram_photo(chart_path)
+
+        log_to_csv(signal_data)
+        return [signal_data]
+
+    except Exception as e:
+        print(f"❌ ERROR during analyze_symbol for {symbol}: {e}")
+        return []
+
+
+# 🔹 Used by /gold, /us30
 async def analyze_symbol_single(symbol, timeframe="H1"):
     df = get_mt5_data(symbol, timeframe, bars=200)
     if df is None or df.empty:
@@ -85,39 +115,12 @@ async def analyze_symbol_single(symbol, timeframe="H1"):
         f"Reasons: {r['reasons']}"
     )
 
-# 🔹 Used by /analyze for standard symbol set
-async def analyze_all_symbols():
-    symbols = ["XAUUSD", "XAGUSD", "EURUSD", "US30", "GBPJPY"]
-    messages = []
 
-    for symbol in symbols:
-        df = get_mt5_data(symbol, timeframe="H1", bars=200)
-        if df is None or df.empty:
-            messages.append(f"❌ {symbol}: No data")
-            continue
-
-        results = await analyze_symbol(df, symbol, "H1")
-        if not results:
-            messages.append(f"❌ {symbol}: No signal")
-            continue
-
-        r = results[0]
-        emoji = "📈" if r["signal"] == "BUY" else "📉"
-        messages.append(
-            f"{emoji} {r['symbol']} ({r['timeframe']})\n"
-            f"Signal: {r['signal']} | Score: {r['score']}\n"
-            f"RSI: {r['rsi']:.2f}, Pattern: {r['pattern']}\n"
-            f"Reasons: {r['reasons']}"
-        )
-
-    return messages
-
-# 🔹 Used by /scanall for full 20+ symbol check
+# 🔹 Used by /scanall
 async def analyze_many_symbols():
     symbols = [
-        "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
-        "AUDUSD", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP", "USDCAD",
-        "BTCUSD", "ETHUSD", "US30", "NAS100", "SPX500", "WTI", "NGAS", "COFFEE"
+        "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY",
+        "USDCAD", "BTCUSD", "ETHUSD", "SPX500", "US30"
     ]
     messages = []
 
@@ -131,13 +134,11 @@ async def analyze_many_symbols():
 
         results = await analyze_symbol(df, symbol, "H1")
         if not results:
-            print(f"❌ No signal for {symbol}")
             messages.append(f"❌ {symbol}: No signal")
             continue
 
         r = results[0]
         emoji = "📈" if r["signal"] == "BUY" else "📉"
-        print(f"✅ Signal for {symbol}: {r['signal']} | Score: {r['score']}")
         messages.append(
             f"{emoji} {r['symbol']} ({r['timeframe']})\n"
             f"Signal: {r['signal']} | Score: {r['score']}\n"
