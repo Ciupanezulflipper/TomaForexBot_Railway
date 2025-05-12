@@ -21,7 +21,8 @@ class XTBConnector:
         self.data = {}
 
     def connect(self):
-        url = "wss://ws.xtb.com/demo" if XTB_DEMO else "wss://ws.xtb.com/real"
+    try:
+        url = "wss://xapi.xtb.com/demo" if XTB_DEMO else "wss://xapi.xtb.com/real"
         self.ws = websocket.WebSocket()
         self.ws.connect(url)
 
@@ -34,9 +35,12 @@ class XTBConnector:
         }
         self.ws.send(json.dumps(login_payload))
         response = json.loads(self.ws.recv())
-        if response["status"] is True:
+        if response.get("status") is True:
             self.session_id = response["streamSessionId"]
             return True
+        return False
+    except Exception as e:
+        print(f"❌ XTB connection error: {e}")
         return False
 
     def get_candles(self, symbol="EURUSD", timeframe="H1", limit=200):
