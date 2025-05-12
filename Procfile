@@ -1,0 +1,1 @@
+python TomaForexBot/main.py 
