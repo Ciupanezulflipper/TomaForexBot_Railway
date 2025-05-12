@@ -1,5 +1,7 @@
 # TomaForexBot/main.py
 
+# Trigger rebuild
+
 import threading
 import uvicorn
 import asyncio

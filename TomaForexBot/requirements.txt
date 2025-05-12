@@ -6,3 +6,4 @@ matplotlib
 fastapi
 uvicorn
 websocket-client
+nest_asyncio
