@@ -113,3 +113,34 @@ async def analyze_all_symbols():
         )
 
     return messages
+
+async def analyze_many_symbols():
+    symbols = [
+        "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+        "AUDUSD", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP", "USDCAD",
+        "BTCUSD", "ETHUSD", "US30", "NAS100", "SPX500", "WTI", "NGAS", "COFFEE"
+    ]
+    messages = []
+
+    for symbol in symbols:
+        df = get_mt5_data(symbol, timeframe="H1", bars=200)
+        if df is None or df.empty:
+            messages.append(f"❌ {symbol}: No data")
+            continue
+
+        results = await analyze_symbol(df, symbol, "H1")
+        if not results:
+            messages.append(f"❌ {symbol}: No signal")
+            continue
+
+        r = results[0]
+        emoji = "📈" if r["signal"] == "BUY" else "📉"
+        messages.append(
+            f"{emoji} {r['symbol']} ({r['timeframe']})\n"
+            f"Signal: {r['signal']} | Score: {r['score']}\n"
+            f"RSI: {r['rsi']:.2f}, Pattern: {r['pattern']}\n"
+            f"Reasons: {r['reasons']}"
+        )
+
+    return messages
+
