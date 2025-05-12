@@ -4,9 +4,10 @@ from patterns import detect_candle_patterns
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
-from telegrambot import send_telegram_message, send_telegram_photo
+from marketdata import get_mt5_data
 
-async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
+# 🔍 Core analysis function
+async def analyze_symbol(df, symbol, timeframe="H1"):
     if df is None or df.empty:
         return []
 
@@ -46,7 +47,6 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         reasons.append(f"Pattern: {pattern}")
 
     signal = "BUY" if last["EMA9"] > last["EMA21"] and last["RSI"] < 70 else "SELL"
-    emoji = "📈" if signal == "BUY" else "📉"
 
     signal_data = {
         "timestamp": pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M"),
@@ -61,28 +61,55 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         "reasons": "; ".join(reasons),
     }
 
-    chart_path = generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
-
-    if score >= 3:
-        msg = (
-            f"{emoji} {signal_data['timestamp']} – {symbol} ({timeframe})\n"
-            f"Signal: {signal} | Score: {score}\n"
-            f"Pattern: {pattern}\n"
-            f"RSI: {last['RSI']:.2f} | EMA9: {last['EMA9']:.4f} | EMA21: {last['EMA21']:.4f}\n"
-            f"Reasons: {'; '.join(reasons)}"
-        )
-        await send_telegram_message(msg)
-        if chart_path:
-            await send_telegram_photo(chart_path)
+    # Generate chart (optional chart_path usage in Telegram)
+    generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
 
     log_to_csv(signal_data)
     return [signal_data]
 
-# Aliases for the main function
-symbol_strategies = {
-    "XAUUSD": lambda symbol, tf: analyze_symbol(symbol, tf),
-    "XAGUSD": lambda symbol, tf: analyze_symbol(symbol, tf),
-    "EURUSD": lambda symbol, tf: analyze_symbol(symbol, tf),
-    "US30M": lambda symbol, tf: analyze_symbol(symbol, tf),
-    "INDNASDAQ": lambda symbol, tf: analyze_symbol(symbol, tf),
-}
+# 🔹 Used by /gold, /us30
+async def analyze_symbol_single(symbol, timeframe="H1"):
+    df = get_mt5_data(symbol, timeframe, bars=200)
+    if df is None or df.empty:
+        return f"❌ No data for {symbol}"
+
+    results = await analyze_symbol(df, symbol, timeframe)
+    if not results:
+        return f"❌ No signal for {symbol}"
+
+    r = results[0]
+    emoji = "📈" if r["signal"] == "BUY" else "📉"
+    return (
+        f"{emoji} {r['timestamp']} – {r['symbol']} ({r['timeframe']})\n"
+        f"Signal: {r['signal']} | Score: {r['score']}\n"
+        f"Pattern: {r['pattern']}\n"
+        f"RSI: {r['rsi']:.2f} | EMA9: {r['ema9']:.4f} | EMA21: {r['ema21']:.4f}\n"
+        f"Reasons: {r['reasons']}"
+    )
+
+# 🔹 Used by /analyze (multi-symbol)
+async def analyze_all_symbols():
+    symbols = ["XAUUSD", "XAGUSD", "EURUSD", "US30", "GBPJPY"]
+    messages = []
+
+    for symbol in symbols:
+        df = get_mt5_data(symbol, timeframe="H1", bars=200)
+        if df is None or df.empty:
+            messages.append(f"❌ {symbol}: No data")
+            continue
+
+        results = await analyze_symbol(df, symbol, "H1")
+        if not results:
+            messages.append(f"❌ {symbol}: No signal")
+            continue
+
+        r = results[0]
+        emoji = "📈" if r["signal"] == "BUY" else "📉"
+        messages.append(
+            f"{emoji} {r['symbol']} ({r['timeframe']})\n"
+            f"Signal: {r['signal']} | Score: {r['score']}\n"
+            f"RSI: {r['rsi']:.2f}, Pattern: {r['pattern']}\n"
+            f"Reasons: {r['reasons']}"
+        )
+
+    return messages
