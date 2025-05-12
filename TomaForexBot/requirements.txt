@@ -1,6 +1,8 @@
+pandas
+requests
+python-dotenv
+python-telegram-bot==20.0
+matplotlib
 fastapi
 uvicorn
-pandas
-python-telegram-bot==20.0
-python-dotenv
-matplotlib
+websocket-client
