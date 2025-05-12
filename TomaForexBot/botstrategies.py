@@ -27,21 +27,30 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         score = 0
         reasons = []
 
-        if last["EMA9"] > last["EMA21"]:
-            score += 1
-            reasons.append("EMA9 > EMA21")
-        elif last["EMA9"] < last["EMA21"]:
-            score += 1
-            reasons.append("EMA9 < EMA21")
-
-        if last["RSI"] < 30:
-            score += 1
-            reasons.append("RSI oversold")
-        elif last["RSI"] > 70:
-            score += 1
-            reasons.append("RSI overbought")
+        if "EMA9" in last and "EMA21" in last:
+            if pd.notnull(last["EMA9"]) and pd.notnull(last["EMA21"]):
+                if last["EMA9"] > last["EMA21"]:
+                    score += 1
+                    reasons.append("EMA9 > EMA21")
+                elif last["EMA9"] < last["EMA21"]:
+                    score += 1
+                    reasons.append("EMA9 < EMA21")
+            else:
+                reasons.append("EMA values missing")
         else:
-            reasons.append("RSI neutral")
+            reasons.append("EMA columns not found")
+
+        if "RSI" in last and pd.notnull(last["RSI"]):
+            if last["RSI"] < 30:
+                score += 1
+                reasons.append("RSI oversold")
+            elif last["RSI"] > 70:
+                score += 1
+                reasons.append("RSI overbought")
+            else:
+                reasons.append("RSI neutral")
+        else:
+            reasons.append("RSI missing")
 
         fib_levels = calculate_fibonacci_levels(high=df["high"].max(), low=df["low"].min())
         fib_match = match_fibonacci_price(last["close"], fib_levels)
@@ -54,7 +63,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
             score += 1
             reasons.append(f"Pattern: {pattern}")
 
-        signal = "BUY" if last["EMA9"] > last["EMA21"] and last["RSI"] < 70 else "SELL"
+        signal = "BUY" if last.get("EMA9", 0) > last.get("EMA21", 0) and last.get("RSI", 50) < 70 else "SELL"
         emoji = "📈" if signal == "BUY" else "📉"
 
         signal_data = {
@@ -64,9 +73,9 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
             "signal": signal,
             "score": score,
             "pattern": pattern,
-            "rsi": last["RSI"],
-            "ema9": last["EMA9"],
-            "ema21": last["EMA21"],
+            "rsi": last.get("RSI", 0),
+            "ema9": last.get("EMA9", 0),
+            "ema21": last.get("EMA21", 0),
             "reasons": "; ".join(reasons),
         }
 
@@ -80,7 +89,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
                 f"{emoji} {signal_data['timestamp']} – {symbol} ({timeframe})\n"
                 f"Signal: {signal} | Score: {score}\n"
                 f"Pattern: {pattern}\n"
-                f"RSI: {last['RSI']:.2f} | EMA9: {last['EMA9']:.4f} | EMA21: {last['EMA21']:.4f}\n"
+                f"RSI: {last.get('RSI', 0):.2f} | EMA9: {last.get('EMA9', 0):.4f} | EMA21: {last.get('EMA21', 0):.4f}\n"
                 f"Reasons: {'; '.join(reasons)}"
             )
             await send_telegram_message(msg)
