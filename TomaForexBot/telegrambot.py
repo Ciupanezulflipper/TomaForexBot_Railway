@@ -1,4 +1,4 @@
-# telegrambot.py
+# TomaForexBot/telegrambot.py
 
 import os
 from dotenv import load_dotenv
@@ -16,20 +16,22 @@ TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
 
 telegram_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-# ✅ Help message content
+# ✅ /start
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Bot is active and ready. Use /help to see available commands.")
+
+# ✅ /help
 def send_help_menu():
     return (
         "🤖 TomaForexBot – Command Menu\n\n"
         "📊 /analyze – Run all symbols (H1)\n"
         "📊 /analyze EURUSD M15 – Single symbol + timeframe\n"
         "🧠 /analyze EURUSD multi – H1 + H4 + D1 summary\n"
-        "📈 /status – Show MT5 status\n"
+        "📈 /chart SYMBOL – Chart with explanation\n"
         "📁 /csv – Send trade_signals.csv\n"
-        "🖼 /chart SYMBOL – Chart with explanation\n"
         "🔧 /help – Show this menu"
     )
 
-# ✅ /help
 async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(send_help_menu())
 
@@ -39,7 +41,7 @@ async def handle_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(CSV_FILE, "rb") as f:
             await update.message.reply_document(document=InputFile(f), filename="trade_signals.csv")
     else:
-        await update.message.reply_text("No CSV file found.")
+        await update.message.reply_text("❌ No CSV file found.")
 
 # ✅ /chart
 async def handle_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,7 +50,7 @@ async def handle_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     symbol = context.args[0].upper()
-    df = get_mt5_data(symbol, timeframe="H1", num_bars=200)
+    df = get_mt5_data(symbol, timeframe="H1", bars=200)
     if df is None or df.empty:
         await update.message.reply_text(f"❌ No data returned for {symbol}")
         return
@@ -73,6 +75,7 @@ async def handle_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ✅ Start polling
 async def start_telegram_listener():
+    telegram_app.add_handler(CommandHandler("start", handle_start))
     telegram_app.add_handler(CommandHandler("help", handle_help))
     telegram_app.add_handler(CommandHandler("csv", handle_csv))
     telegram_app.add_handler(CommandHandler("chart", handle_chart))
