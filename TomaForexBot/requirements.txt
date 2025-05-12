@@ -7,3 +7,4 @@ fastapi
 uvicorn
 websocket-client
 nest_asyncio
+yfinance
