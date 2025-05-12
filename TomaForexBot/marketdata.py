@@ -1,57 +1,78 @@
-import os
+# TomaForexBot/marketdata.py
+
+import time
+import threading
 import pandas as pd
-import datetime
+import websocket
+import json
+import os
 
-USE_MOCK = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
+from dotenv import load_dotenv
+load_dotenv()
 
-if not USE_MOCK:
-    try:
-        import MetaTrader5 as mt5
-        def connect():
-            return mt5.initialize()
+XTB_USER = os.getenv("XTB_USER")
+XTB_PASS = os.getenv("XTB_PASS")
+XTB_DEMO = True  # Set to False for real account
 
-        def disconnect():
-            mt5.shutdown()
+class XTBConnector:
+    def __init__(self):
+        self.session_id = None
+        self.ws = None
+        self.data = {}
 
-        def get_ohlc(symbol="EURUSD", timeframe=mt5.TIMEFRAME_H1, bars=200):
-            if not mt5.initialize():
-                print("❌ MT5 init failed:", mt5.last_error())
-                return pd.DataFrame()
-            rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, bars)
-            mt5.shutdown()
-            if rates is None or len(rates) == 0:
-                return pd.DataFrame()
-            df = pd.DataFrame(rates)
-            df["datetime"] = pd.to_datetime(df["time"], unit="s")
-            df.set_index("datetime", inplace=True)
-            return df
+    def connect(self):
+        url = "wss://ws.xtb.com/demo" if XTB_DEMO else "wss://ws.xtb.com/real"
+        self.ws = websocket.WebSocket()
+        self.ws.connect(url)
 
-    except ImportError:
-        print("⚠️ MT5 not available, falling back to mock data")
-        USE_MOCK = True
-
-if USE_MOCK:
-    def connect():
-        return True
-
-    def disconnect():
-        pass
-
-    def get_ohlc(symbol="SIMULATED", timeframe="H1", bars=200):
-        now = datetime.datetime.now()
-        data = {
-            'time': [now - datetime.timedelta(hours=i) for i in range(bars)],
-            'open': [1.1 + i * 0.01 for i in range(bars)],
-            'high': [1.2 + i * 0.01 for i in range(bars)],
-            'low': [1.0 + i * 0.01 for i in range(bars)],
-            'close': [1.15 + i * 0.01 for i in range(bars)],
-            'tick_volume': [1000 for _ in range(bars)],
+        login_payload = {
+            "command": "login",
+            "arguments": {
+                "userId": XTB_USER,
+                "password": XTB_PASS
+            }
         }
-        df = pd.DataFrame(data)
-        df = df[::-1].reset_index(drop=True)
-        df["datetime"] = pd.to_datetime(df["time"])
-        df.set_index("datetime", inplace=True)
+        self.ws.send(json.dumps(login_payload))
+        response = json.loads(self.ws.recv())
+        if response["status"] is True:
+            self.session_id = response["streamSessionId"]
+            return True
+        return False
+
+    def get_candles(self, symbol="EURUSD", timeframe="H1", limit=200):
+        candle_request = {
+            "command": "getChartLastRequest",
+            "arguments": {
+                "info": {
+                    "period": 60,
+                    "start": int(time.time()) - (limit * 3600),
+                    "symbol": symbol
+                }
+            }
+        }
+        self.ws.send(json.dumps(candle_request))
+        response = json.loads(self.ws.recv())
+        candles = response["returnData"]["rateInfos"]
+
+        ohlc = {
+            "time": [pd.to_datetime(c["ctm"], unit="ms") for c in candles],
+            "open": [c["open"] for c in candles],
+            "high": [c["high"] for c in candles],
+            "low": [c["low"] for c in candles],
+            "close": [c["close"] for c in candles],
+            "volume": [c["vol"] for c in candles]
+        }
+        df = pd.DataFrame(ohlc)
+        df.set_index("time", inplace=True)
         return df
 
-# Universal alias
-get_mt5_data = get_ohlc
+# Global for other modules
+xtb = XTBConnector()
+def get_xtb_data(symbol="EURUSD", timeframe="H1", bars=200):
+    if not xtb.connect():
+        print("❌ XTB connection failed.")
+        return pd.DataFrame()
+    return xtb.get_candles(symbol=symbol, timeframe=timeframe, limit=bars)
+get_mt5_data = get_xtb_data
+get_ohlc = get_xtb_data
+
