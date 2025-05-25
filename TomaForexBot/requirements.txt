@@ -8,3 +8,4 @@ uvicorn
 websocket-client
 nest_asyncio
 yfinance
+investpy
