@@ -24,3 +24,6 @@ async def handle_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = "⚠️ Could not retrieve MT5 account info."
 
     await update.message.reply_text(status)
+def get_bot_status():
+    # Placeholder status function
+    return "Bot is running."

@@ -10,11 +10,11 @@ def calculate_volatility(df, period=14):
 def classify_risk_level(df):
     latest_vol = df['volatility'].iloc[-1]
     if latest_vol < 0.5:
-        return "🟢 Low"
+        return "🟢 low"
     elif latest_vol < 1.0:
         return "🟡 Medium"
     else:
-        return "🔴 High"
+        return "🔴 high"
 
 def summarize_risk(df):
     df = calculate_volatility(df)

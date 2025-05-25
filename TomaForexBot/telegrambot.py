@@ -1,55 +1,87 @@
 import os
+import logging
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from botstrategies import analyze_symbol_single, analyze_all_symbols, analyze_many_symbols
+from botstrategies import analyze_symbol_single
+from charting import generate_pro_chart
+from statushandler import get_bot_status
+from marketdata import get_ohlc
+
+# Setup logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
-telegram_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+# /start
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.debug(f"/start called by {update.effective_user.username}, args: {context.args if hasattr(context,'args') else 'None'}")
+    await update.message.reply_text("👋 Bot is online. Use /analyze EURUSD or /chart EURUSD H1")
 
-async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"🚨 /start received from {update.effective_user.id}")
-    await update.message.reply_text("👋 Hello from Railway. Bot is live.")
+# /status
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.debug(f"/status called by {update.effective_user.username}, args: {context.args if hasattr(context,'args') else 'None'}")
+    status = get_bot_status()
+    await update.message.reply_text(status)
 
-async def handle_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /gold received from {update.effective_user.id}")
-    msg = await analyze_symbol_single("XAUUSD")
-    await update.message.reply_text(msg)
+# /analyze SYMBOL
+async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.debug(f"/analyze called by {update.effective_user.username}, args: {context.args}")
+    if not context.args:
+        await update.message.reply_text("⚠️ Usage: /analyze SYMBOL (e.g. /analyze EURUSD)")
+        return
+    symbol = context.args[0].upper()
+    chat_id = update.effective_chat.id
+    try:
+        from analyzers import analyze_symbol_multi_tf
+        logger.debug(f"Using analyze_symbol_multi_tf for {symbol}")
+        await analyze_symbol_multi_tf(symbol, chat_id)
+    except ImportError:
+        logger.debug(f"Using analyze_symbol_single for {symbol}")
+        result = await analyze_symbol_single(symbol)
+        await update.message.reply_text(result)
 
-async def handle_silver(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /silver received from {update.effective_user.id}")
-    msg = await analyze_symbol_single("XAGUSD")
-    await update.message.reply_text(msg)
+# /chart SYMBOL TIMEFRAME
+async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.debug(f"/chart called by {update.effective_user.username}, args: {context.args}")
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️ Usage: /chart SYMBOL TIMEFRAME (e.g. /chart EURUSD H1)")
+        return
+    symbol = context.args[0].upper()
+    tf = context.args[1].upper()
+    chat_id = update.effective_chat.id
+    logger.debug(f"Fetching data for {symbol} {tf}")
 
-async def handle_us30(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /us30 received from {update.effective_user.id}")
-    msg = await analyze_symbol_single("US30")
-    await update.message.reply_text(msg)
+    try:
+        df = get_ohlc(symbol, tf, bars=150)
+        logger.debug(f"get_ohlc returned: {df.shape if df is not None else 'None'}")
+        if df is None or df.empty:
+            await update.message.reply_text("❌ No data available for chart.")
+            return
+        chart_path = generate_pro_chart(df, symbol, tf)
+        with open(chart_path, 'rb') as photo:
+            await context.bot.send_photo(chat_id=chat_id, photo=photo)
+    except Exception as e:
+        logger.error(f"Chart error for {symbol}: {e}")
+        await update.message.reply_text(f"⚠️ Chart error: {e}")
 
-async def handle_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /analyze received from {update.effective_user.id}")
-    await update.message.reply_text("⏳ Scanning standard symbol set (H1)...")
-    messages = await analyze_all_symbols()
-    for msg in messages:
-        await update.message.reply_text(msg)
+# /echo
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.debug(f"/echo called by {update.effective_user.username}, args: {context.args if hasattr(context,'args') else 'None'}")
+    await update.message.reply_text("Bot is alive!")
 
-async def handle_scanall(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"📩 /scanall received from {update.effective_user.id}")
-    await update.message.reply_text("📡 Scanning top 20+ pairs and assets (H1)...")
-    messages = await analyze_many_symbols()
-    for msg in messages:
-        await update.message.reply_text(msg)
+# Start Telegram bot listener
+def start_telegram_listener():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-async def start_telegram_listener():
-    print("🚀 Telegram bot starting...")
-    telegram_app.add_handler(CommandHandler("start", handle_start))
-    telegram_app.add_handler(CommandHandler("gold", handle_gold))
-    telegram_app.add_handler(CommandHandler("silver", handle_silver))
-    telegram_app.add_handler(CommandHandler("us30", handle_us30))
-    telegram_app.add_handler(CommandHandler("analyze", handle_analyze))
-    telegram_app.add_handler(CommandHandler("scanall", handle_scanall))
-    print("✅ Handlers ready.")
-    await telegram_app.run_polling(stop_signals=None)
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("analyze", analyze_command))
+    app.add_handler(CommandHandler("chart", chart_command))
+    app.add_handler(CommandHandler("echo", echo))
+
+    logger.info("[INFO] Telegram bot started. Listening for commands...")
+    app.run_polling()

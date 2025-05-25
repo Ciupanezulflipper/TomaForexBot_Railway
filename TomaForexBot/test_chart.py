@@ -17,7 +17,7 @@ if df is None or df.empty:
 # Step 3: Generate chart
 score = 4
 signal = "BUY"
-reasons = "RSI < 30, EMA crossover, pattern match"
+reasons = "rsi < 30, EMA crossover, pattern match"
 chart_path = generate_pro_chart(df, symbol, "H1", score, signal, reasons)
 
 # Step 4: Show path

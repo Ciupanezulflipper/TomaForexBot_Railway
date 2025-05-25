@@ -26,13 +26,13 @@ if df.empty:
 print("Columns in DataFrame:", df.columns)  # Added this line to help debug the missing datetime column
 
 # Indicators
-df["EMA9"] = calculate_ema(df["close"], 9)
-df["EMA21"] = calculate_ema(df["close"], 21)
-df["RSI"] = calculate_rsi(df["close"], 14)
+df["ema9"] = calculate_ema(df["close"], 9)
+df["ema21"] = calculate_ema(df["close"], 21)
+df["rsi"] = calculate_rsi(df["close"], 14)
 
-# Patterns
+# patterns
 patterns = detect_candle_patterns(df.tail(5))  # Remove the threshold argument
-last_rsi = df["RSI"].iloc[-1]
+last_rsi = df["rsi"].iloc[-1]
 
 # --- Force test to pass even without real signal ---
 patterns = ["Bullish Engulfing", "Hammer", "Doji"]  # simulate 3 patterns
@@ -42,13 +42,13 @@ last_rsi = 28.5  # simulate oversold
 if is_strong_signal(patterns, last_rsi):
     score = 5
     signal = "BUY"
-    reasons = f"Patterns: {', '.join(patterns)} | RSI: {last_rsi:.2f}"
+    reasons = f"patterns: {', '.join(patterns)} | rsi: {last_rsi:.2f}"
 
     chart_path = generate_pro_chart(df, symbol, "H1", score, signal, reasons)
     msg = (
         f"📢 *{signal} Signal on {symbol}*\n"
         f"🧠 {reasons}\n"
-        f"📊 EMA9={df['EMA9'].iloc[-1]:.4f}, EMA21={df['EMA21'].iloc[-1]:.4f}"
+        f"📊 ema9={df['ema9'].iloc[-1]:.4f}, ema21={df['ema21'].iloc[-1]:.4f}"
     )
     send_telegram_message(msg)
     send_telegram_photo(chart_path)

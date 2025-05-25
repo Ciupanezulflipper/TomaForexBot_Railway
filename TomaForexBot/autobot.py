@@ -15,12 +15,12 @@ def analyze_and_alert(symbol, tf=mt5.TIMEFRAME_H1, bars=50, pattern_threshold=2)
         print(f"⚠️ No data for {symbol}")
         return
 
-    df['EMA9'] = calculate_ema(df['close'], period=9)
-    df['EMA21'] = calculate_ema(df['close'], period=21)
-    df['RSI'] = calculate_rsi(df['close'], period=14)
+    df['ema9'] = calculate_ema(df['close'], period=9)
+    df['ema21'] = calculate_ema(df['close'], period=21)
+    df['rsi'] = calculate_rsi(df['close'], period=14)
 
     patterns = detect_candle_patterns(df.tail(pattern_threshold), threshold=pattern_threshold)
-    last_rsi = df.iloc[-1]['RSI']
+    last_rsi = df.iloc[-1]['rsi']
 
     if not is_strong_signal(patterns, last_rsi):
         print(f"🟡 No strong signal for {symbol}.")
@@ -32,8 +32,8 @@ def analyze_and_alert(symbol, tf=mt5.TIMEFRAME_H1, bars=50, pattern_threshold=2)
     message = (
         f"📢 *Strong Signal on {symbol}*\n"
         f"🕰 {last_time}\n"
-        f"🧠 Patterns: {', '.join(patterns)}\n"
-        f"📉 RSI: {last_rsi:.2f} {emoji}\n"
+        f"🧠 patterns: {', '.join(patterns)}\n"
+        f"📉 rsi: {last_rsi:.2f} {emoji}\n"
         f"🔁 Timeframe: H1"
     )
     send_telegram_message(message)

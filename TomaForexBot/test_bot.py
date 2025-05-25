@@ -16,12 +16,12 @@ from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns, is_strong_signal
 
 def fake_ema(df, short=9, long=21):
-    df['EMA9'] = df['close'].ewm(span=short, adjust=False).mean()
-    df['EMA21'] = df['close'].ewm(span=long, adjust=False).mean()
+    df['ema9'] = df['close'].ewm(span=short, adjust=False).mean()
+    df['ema21'] = df['close'].ewm(span=long, adjust=False).mean()
     return df
 
 def fake_rsi(df, period=14):
-    df['RSI'] = 50  # neutral for test
+    df['rsi'] = 50  # neutral for test
     return df
 
 def fake_patterns(df):

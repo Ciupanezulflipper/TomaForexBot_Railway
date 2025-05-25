@@ -1,74 +1,95 @@
-# xtb_connector.py
-
 import os
-import requests
+import time
+import json
 import pandas as pd
+import websocket
 from dotenv import load_dotenv
 
 load_dotenv()
 
-XTB_API_URL = "https://xapi.xtb.com"
+XTB_USER = os.getenv("XTB_USER")
+XTB_PASS = os.getenv("XTB_PASS")
+XTB_DEMO = os.getenv("XTB_DEMO", "true").lower() == "true"
 
-class XTBClient:
+
+class XTBConnector:
     def __init__(self):
-        self.session = requests.Session()
-        self.stream_session = None
-        self.sid = None
+        self.ws = None
+        self.session_id = None
+        self.connected = False
 
-    def login(self):
-        payload = {
-            "command": "login",
-            "arguments": {
-                "userId": os.getenv("XTB_USERNAME"),
-                "password": os.getenv("XTB_PASSWORD")
-            }
-        }
-        res = self.session.post(f"{XTB_API_URL}/login", json=payload)
-        if res.ok and res.json().get("status"):
-            self.sid = res.json()["streamSessionId"]
-            print("✅ Logged into XTB")
-            return True
-        print("❌ XTB login failed")
-        return False
+    def connect(self):
+        try:
+            url = "wss://xapi.xtb.com/demo" if XTB_DEMO else "wss://xapi.xtb.com/real"
+            self.ws = websocket.WebSocket()
+            self.ws.settimeout(5)
+            self.ws.connect(url)
 
-    def get_candles(self, symbol="EURUSD", timeframe="H1", limit=200):
-        tf_map = {
-            "M1": 1, "M5": 5, "M15": 15, "M30": 30,
-            "H1": 60, "H4": 240, "D1": 1440
-        }
-        if timeframe not in tf_map:
-            raise ValueError("Unsupported timeframe.")
-
-        payload = {
-            "command": "getChartLastRequest",
-            "arguments": {
-                "info": {
-                    "period": tf_map[timeframe],
-                    "start": 0,
-                    "symbol": symbol
+            payload = {
+                "command": "login",
+                "arguments": {
+                    "userId": XTB_USER,
+                    "password": XTB_PASS
                 }
             }
-        }
-        res = self.session.post(f"{XTB_API_URL}/getChartLastRequest", json=payload)
-        if not res.ok or not res.json().get("status"):
-            print("❌ Failed to fetch candles")
+            self.ws.send(json.dumps(payload))
+            response = json.loads(self.ws.recv())
+            if response.get("status"):
+                self.session_id = response.get("streamSessionId")
+                self.connected = True
+                print("✅ Connected to XTB")
+                return True
+            else:
+                print("❌ Login failed:", response)
+                return False
+        except Exception as e:
+            print(f"❌ XTB connection error: {e}")
+            self.connected = False
+            return False
+
+    def ping(self):
+        try:
+            self.ws.send(json.dumps({"command": "ping"}))
+            pong = self.ws.recv()
+            return True
+        except:
+            return False
+
+    def get_candles(self, symbol="EURUSD", timeframe="H1", limit=200):
+        if not self.connected and not self.connect():
             return pd.DataFrame()
 
-        candles = res.json()["returnData"]["rateInfos"]
-        df = pd.DataFrame(candles)
-        df["timestamp"] = pd.to_datetime(df["ctm"], unit="ms")
-        df.set_index("timestamp", inplace=True)
-        df.rename(columns={"open": "open", "close": "close", "high": "high", "low": "low", "vol": "volume"}, inplace=True)
-        return df[["open", "high", "low", "close", "volume"]].tail(limit)
+        try:
+            self.ws.send(json.dumps({
+                "command": "getChartLastRequest",
+                "arguments": {
+                    "info": {
+                        "period": 60,  # H1 = 60 min
+                        "start": int(time.time()) - (limit * 3600),
+                        "symbol": symbol
+                    }
+                }
+            }))
+            response = json.loads(self.ws.recv())
+            if "returnData" not in response or "rateInfos" not in response["returnData"]:
+                print(f"⚠️ XTB response missing data for {symbol}")
+                return pd.DataFrame()
 
-    def logout(self):
-        self.session.post(f"{XTB_API_URL}/logout")
-        print("🔌 Logged out from XTB")
+            candles = response["returnData"]["rateInfos"]
+            df = pd.DataFrame({
+                "time": [pd.to_datetime(c["ctm"], unit="ms") for c in candles],
+                "open": [c["open"] for c in candles],
+                "high": [c["high"] for c in candles],
+                "low": [c["low"] for c in candles],
+                "close": [c["close"] for c in candles],
+                "volume": [c["vol"] for c in candles],
+            }).set_index("time")
 
-def get_xtb_data(symbol="EURUSD", timeframe="H1", limit=200):
-    client = XTBClient()
-    if client.login():
-        df = client.get_candles(symbol, timeframe, limit)
-        client.logout()
-        return df
-    return pd.DataFrame()
+            return df
+
+        except Exception as e:
+            print(f"❌ Failed to fetch candles from XTB: {e}")
+            return pd.DataFrame()
+
+
+xtb = XTBConnector()

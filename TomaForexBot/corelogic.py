@@ -35,18 +35,18 @@ def analyze_symbol(symbol, df):
 
     if latest["ema9"] > latest["ema21"]:
         signal["score"] += 1
-        signal["reasons"].append("EMA9 > EMA21")
+        signal["reasons"].append("ema9 > ema21")
 
     if latest["rsi"] < 30:
         signal["score"] += 1
-        signal["reasons"].append("RSI oversold")
+        signal["reasons"].append("rsi oversold")
     elif latest["rsi"] > 70:
         signal["score"] -= 1
-        signal["reasons"].append("RSI overbought")
+        signal["reasons"].append("rsi overbought")
 
     if signal["pattern"] != "None":
         signal["score"] += 1
-        signal["reasons"].append(f"Pattern: {signal['pattern']}")
+        signal["reasons"].append(f"pattern: {signal['pattern']}")
 
     if fib_match:
         signal["score"] += 1
