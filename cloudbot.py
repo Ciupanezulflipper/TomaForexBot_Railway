@@ -1,4 +1,4 @@
-# cloudbot.py - FULL 16/16+6 Output
+# DEBUG VERSION: Print confirmation for 16/16+6 analysis section
 import os
 import pandas as pd
 import yfinance as yf
@@ -8,7 +8,6 @@ from datetime import datetime
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Helper Functions
 def calculate_ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
@@ -104,8 +103,7 @@ def price_near_fib(price, fib_levels, threshold=0.0005):
     return any(abs(price - lvl) < threshold for lvl in fib_levels.values())
 
 def rsi_divergence(rsi):
-    # Placeholder (real RSI divergence is more complex)
-    return False
+    return False  # Placeholder
 
 def volume_spike(df, period=20, spike_mult=2):
     if 'Volume' not in df.columns:
@@ -125,7 +123,6 @@ def previous_candle_confirm(df):
 def support_resistance(price, high, low, threshold=0.0005):
     return abs(price - high) < threshold or abs(price - low) < threshold
 
-# Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Cloud bot online. Telegram working!")
 
@@ -140,7 +137,6 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if df.empty:
             await update.message.reply_text(f"No data found for {symbol}.")
             return
-
         close = df['Close']
         ema9 = calculate_ema(close, 9)
         ema21 = calculate_ema(close, 21)
@@ -148,7 +144,6 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         atr14 = calculate_atr(df, 14)
         adx14 = calculate_adx(df, 14)
         fib_levels, swing_high, swing_low = get_fibonacci_levels(close.tail(50))
-
         last_price = float(close.iloc[-1])
         last_ema9 = float(ema9.iloc[-1])
         last_ema21 = float(ema21.iloc[-1])
@@ -163,8 +158,19 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         near_sr = support_resistance(last_price, swing_high, swing_low)
         vol_spike = volume_spike(df)
         rsi_div = rsi_divergence(rsi14)
-
-        # Signal Score
+        print("---DEBUG 16/16+6 CHECKS---")
+        print(f"EMA9 > EMA21: {last_ema9 > last_ema21}")
+        print(f"RSI(14) > 55: {last_rsi > 55}")
+        print(f"Bullish Engulfing: {bullish_engulf}")
+        print(f"Candle Body > 50%: {body_50}")
+        print(f"ATR14 > 0: {last_atr > 0}")
+        print(f"ADX14 > 20: {last_adx > 20}")
+        print(f"Stack (Close > EMA9 > EMA21): {stack}")
+        print(f"Prev Candle Bullish: {prev_bullish}")
+        print(f"Price near Fibonacci: {near_fib}")
+        print(f"Near Support/Resistance: {near_sr}")
+        print(f"Volume Spike: {vol_spike}")
+        print(f"No RSI Divergence: {not rsi_div}")
         score = sum([
             last_ema9 > last_ema21,
             last_rsi > 55,
@@ -179,9 +185,7 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
             vol_spike,
             not rsi_div,
         ])
-
         signal = "BUY ✅" if score >= 9 else "NEUTRAL ⚪️" if score >= 6 else "SELL ❌"
-
         msg = (
             f"MULTI-CRITERIA ANALYSIS for {symbol} ({datetime.now().strftime('%Y-%m-%d %H:%M')})\n"
             f"Price: {last_price:.5f}\n"
