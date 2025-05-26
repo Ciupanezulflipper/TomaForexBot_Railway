@@ -1,10 +1,18 @@
+from dotenv import load_dotenv
 import os
 import pandas as pd
 import yfinance as yf
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+def get_scalar(val):
+    # Handles Series and scalars robustly
+    if isinstance(val, pd.Series):
+        return float(val.iloc[0])
+    return float(val)
 
 def calculate_ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
@@ -20,8 +28,13 @@ def calculate_rsi(series, period=14):
     return rsi
 
 def get_fibonacci_levels(series):
-    highest = series.max()
-    lowest = series.min()
+    # Handles Series-of-Series edge cases (pandas/yfinance future-proof)
+    hi = series.max()
+    lo = series.min()
+    if isinstance(hi, pd.Series): hi = hi.iloc[0]
+    if isinstance(lo, pd.Series): lo = lo.iloc[0]
+    highest = float(hi)
+    lowest = float(lo)
     diff = highest - lowest
     levels = {
         "61.8%": highest - 0.618 * diff,
@@ -31,19 +44,22 @@ def get_fibonacci_levels(series):
     return levels, highest, lowest
 
 def detect_bullish_engulfing(df):
-    # Make sure we have at least 2 rows to compare
     if len(df) < 2:
         return False
     prev = df.iloc[-2]
     curr = df.iloc[-1]
-    prev_body = abs(prev['Close'] - prev['Open'])
-    curr_body = abs(curr['Close'] - curr['Open'])
+    prev_open = get_scalar(prev['Open'])
+    prev_close = get_scalar(prev['Close'])
+    curr_open = get_scalar(curr['Open'])
+    curr_close = get_scalar(curr['Close'])
+    prev_body = abs(prev_close - prev_open)
+    curr_body = abs(curr_close - curr_open)
     return (
-        (prev['Close'] < prev['Open']) and 
-        (curr['Close'] > curr['Open']) and 
-        (curr_body > prev_body) and 
-        (curr['Open'] < prev['Close']) and 
-        (curr['Close'] > prev['Open'])
+        prev_close < prev_open and
+        curr_close > curr_open and
+        curr_body > prev_body and
+        curr_open < prev_close and
+        curr_close > prev_open
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,31 +90,24 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ema9 = calculate_ema(close, 9)
         ema21 = calculate_ema(close, 21)
         rsi14 = calculate_rsi(close, 14)
+        fib_levels, swing_high, swing_low = get_fibonacci_levels(close.tail(50))
 
-        fib_levels, swing_high, swing_low = get_fibonacci_levels(close.tail(50))  # last 50 candles
-
-        last_price = close.iloc[-1]
-        last_ema9 = ema9.iloc[-1]
-        last_ema21 = ema21.iloc[-1]
-        last_rsi = rsi14.iloc[-1]
-
-        # Pattern detection
+        last_price = get_scalar(close.iloc[-1])
+        last_ema9 = get_scalar(ema9.iloc[-1])
+        last_ema21 = get_scalar(ema21.iloc[-1])
+        last_rsi = get_scalar(rsi14.iloc[-1])
         bullish_engulf = detect_bullish_engulfing(df.tail(3))
         pattern_str = "Bullish Engulfing" if bullish_engulf else "No strong pattern"
-
-        # Signal filter (2/3 indicators must be "bullish")
         bullish_count = 0
         if last_ema9 > last_ema21: bullish_count += 1
         if last_rsi > 50: bullish_count += 1
         if bullish_engulf: bullish_count += 1
-
         if bullish_count >= 2:
             signal = "BUY ✅"
         elif bullish_count == 1:
             signal = "NEUTRAL ⚪"
         else:
             signal = "SELL ❌"
-
         message = (
             f"Analysis for {symbol}:\n"
             f"Price: {last_price:.5f}\n"
