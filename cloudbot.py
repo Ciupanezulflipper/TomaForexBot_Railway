@@ -31,17 +31,19 @@ def get_fibonacci_levels(series):
     return levels, highest, lowest
 
 def detect_bullish_engulfing(df):
-    # Simple bullish engulfing: previous candle red, current green, body larger
+    # Make sure we have at least 2 rows to compare
+    if len(df) < 2:
+        return False
     prev = df.iloc[-2]
     curr = df.iloc[-1]
     prev_body = abs(prev['Close'] - prev['Open'])
     curr_body = abs(curr['Close'] - curr['Open'])
     return (
-        prev['Close'] < prev['Open'] and 
-        curr['Close'] > curr['Open'] and 
-        curr_body > prev_body and 
-        curr['Open'] < prev['Close'] and 
-        curr['Close'] > prev['Open']
+        (prev['Close'] < prev['Open']) and 
+        (curr['Close'] > curr['Open']) and 
+        (curr_body > prev_body) and 
+        (curr['Open'] < prev['Close']) and 
+        (curr['Close'] > prev['Open'])
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
