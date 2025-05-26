@@ -1,0 +1,11 @@
+pandas
+requests
+python-dotenv
+python-telegram-bot==20.0
+matplotlib
+fastapi
+uvicorn
+websocket-client
+nest_asyncio
+yfinance
+investpy
