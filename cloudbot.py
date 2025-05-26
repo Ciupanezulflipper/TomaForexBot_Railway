@@ -8,17 +8,15 @@ from datetime import datetime
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 def get_scalar(val):
+    """Get a float scalar from pd.Series or np.generic, else fallback."""
     if hasattr(val, 'item'):
         return float(val.item())
     elif isinstance(val, (float, int)):
         return float(val)
-    elif hasattr(val, 'iloc'):
-        return float(val.iloc[0])
+    elif hasattr(val, '__float__'):
+        return float(val)
     else:
-        try:
-            return float(val)
-        except:
-            return 0.0
+        return float(val.iloc[0]) if hasattr(val, 'iloc') else float(val)
 
 def calculate_ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
@@ -92,7 +90,7 @@ def detect_bullish_engulfing(df):
         curr_open < prev_close and
         curr_close > prev_open
     )
-    return bool(is_bullish_engulfing)
+    return is_bullish_engulfing
 
 def candle_body_over_50(df):
     if len(df) < 1:
@@ -100,7 +98,7 @@ def candle_body_over_50(df):
     last = df.iloc[-1]
     body = abs(get_scalar(last['Close']) - get_scalar(last['Open']))
     high_low = abs(get_scalar(last['High']) - get_scalar(last['Low']))
-    return bool((body / high_low) > 0.5) if high_low != 0 else False
+    return (body / high_low) > 0.5 if high_low != 0 else False
 
 def check_stack(df):
     if len(df) < 1:
@@ -109,20 +107,21 @@ def check_stack(df):
     close = get_scalar(last['Close'])
     ema9 = get_scalar(calculate_ema(df['Close'], 9).iloc[-1])
     ema21 = get_scalar(calculate_ema(df['Close'], 21).iloc[-1])
-    return bool(close > ema9 > ema21)
+    return close > ema9 > ema21
 
 def price_near_fib(price, fib_levels, threshold=0.0005):
-    return any(abs(price - float(lvl)) < threshold for lvl in fib_levels.values())
+    return any(abs(price - lvl) < threshold for lvl in fib_levels.values())
 
 def rsi_divergence(rsi):
-    return False  # Placeholder for now
+    # Placeholder for divergence logic
+    return False
 
 def volume_spike(df, period=20, spike_mult=2):
     if 'Volume' not in df.columns:
         return False
     avg_vol = df['Volume'].rolling(window=period).mean().iloc[-1]
     last_vol = df['Volume'].iloc[-1]
-    return bool(last_vol > avg_vol * spike_mult) if avg_vol else False
+    return last_vol > avg_vol * spike_mult if avg_vol else False
 
 def previous_candle_confirm(df):
     if len(df) < 2:
@@ -130,10 +129,10 @@ def previous_candle_confirm(df):
     prev = df.iloc[-2]
     bullish = get_scalar(prev['Close']) > get_scalar(prev['Open'])
     bearish = get_scalar(prev['Close']) < get_scalar(prev['Open'])
-    return bool(bullish), bool(bearish)
+    return bullish, bearish
 
 def support_resistance(price, high, low, threshold=0.0005):
-    return bool(abs(price - high) < threshold or abs(price - low) < threshold)
+    return abs(price - high) < threshold or abs(price - low) < threshold
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Cloud bot online. Telegram working!")
