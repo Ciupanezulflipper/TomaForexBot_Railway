@@ -1,220 +1,101 @@
+# cloudbot.py
 import os
+import logging
+import asyncio
+from dotenv import load_dotenv
+from telegram import Bot
 import pandas as pd
-import yfinance as yf
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from datetime import datetime
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+from botstrategies import analyze_symbol_single
+from patterns import detect_candle_patterns
+from indicators import calculate_rsi
+from news_feeds import analyze_all_feeds
+from economic_calendar_module import fetch_all_calendar, analyze_events
 
-def get_scalar(val):
-    """Get a float scalar from pd.Series or np.generic, else fallback."""
-    if hasattr(val, 'item'):
-        return float(val.item())
-    elif isinstance(val, (float, int)):
-        return float(val)
-    elif hasattr(val, '__float__'):
-        return float(val)
-    else:
-        return float(val.iloc[0]) if hasattr(val, 'iloc') else float(val)
+# ---- ENV/SETUP ----
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
-def calculate_ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+bot = Bot(token=TELEGRAM_TOKEN)
 
-def calculate_atr(df, period=14):
-    high = df['High']
-    low = df['Low']
-    close = df['Close']
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-    atr = tr.rolling(window=period, min_periods=1).mean()
-    return atr
+# ---- MAIN LOGIC ----
 
-def calculate_adx(df, period=14):
-    high = df['High']
-    low = df['Low']
-    close = df['Close']
-    plus_dm = high.diff().clip(lower=0)
-    minus_dm = (-low.diff()).clip(lower=0)
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-    atr = tr.rolling(window=period).mean()
-    plus_di = 100 * (plus_dm.rolling(window=period).sum() / atr)
-    minus_di = 100 * (minus_dm.rolling(window=period).sum() / atr)
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
-    adx = dx.rolling(window=period).mean()
-    return adx
+async def send_pattern_alerts():
+    from marketdata import get_mt5_data
 
-def get_fibonacci_levels(series):
-    highest = get_scalar(series.max())
-    lowest = get_scalar(series.min())
-    diff = highest - lowest
-    levels = {
-        "61.8%": highest - 0.618 * diff,
-        "50.0%": highest - 0.500 * diff,
-        "38.2%": highest - 0.382 * diff,
-    }
-    return levels, highest, lowest
+    PAIRS = ["EURUSD", "GBPUSD", "USDJPY"]
+    TIMEFRAME = "H1"
+    MIN_RSI_BUY = 35
+    MAX_RSI_SELL = 65
 
-def detect_bullish_engulfing(df):
-    if len(df) < 2:
-        return False
-    prev = df.iloc[-2]
-    curr = df.iloc[-1]
-    prev_open = get_scalar(prev['Open'])
-    prev_close = get_scalar(prev['Close'])
-    curr_open = get_scalar(curr['Open'])
-    curr_close = get_scalar(curr['Close'])
-    prev_body = abs(prev_close - prev_open)
-    curr_body = abs(curr_close - curr_open)
-    is_bullish_engulfing = (
-        prev_close < prev_open and
-        curr_close > curr_open and
-        curr_body > prev_body and
-        curr_open < prev_close and
-        curr_close > prev_open
-    )
-    return is_bullish_engulfing
+    for symbol in PAIRS:
+        df = get_mt5_data(symbol, TIMEFRAME, bars=100)
+        if df is None or df.empty:
+            logger.warning(f"[{symbol}] No data.")
+            continue
+        df = detect_candle_patterns(df)
+        rsi = calculate_rsi(df["close"], 14)
+        df["RSI"] = rsi
 
-def candle_body_over_50(df):
-    if len(df) < 1:
-        return False
-    last = df.iloc[-1]
-    body = abs(get_scalar(last['Close']) - get_scalar(last['Open']))
-    high_low = abs(get_scalar(last['High']) - get_scalar(last['Low']))
-    return (body / high_low) > 0.5 if high_low != 0 else False
+        last = df.iloc[-1]
+        last_pattern = last.get("Pattern", "")
+        last_rsi = last.get("RSI", None)
+        last_close = last.get("close", None)
 
-def check_stack(df):
-    if len(df) < 1:
-        return False
-    last = df.iloc[-1]
-    close = get_scalar(last['Close'])
-    ema9 = get_scalar(calculate_ema(df['Close'], 9).iloc[-1])
-    ema21 = get_scalar(calculate_ema(df['Close'], 21).iloc[-1])
-    return close > ema9 > ema21
+        alert = None
+        # Bullish patterns + low RSI = Buy alert
+        if any(p in last_pattern for p in ["Bullish Engulfing", "Hammer", "Morning Star"]):
+            if last_rsi is not None and last_rsi < MIN_RSI_BUY:
+                alert = f"BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
+        # Bearish patterns + high RSI = Sell alert
+        if any(p in last_pattern for p in ["Bearish Engulfing", "Shooting Star", "Evening Star"]):
+            if last_rsi is not None and last_rsi > MAX_RSI_SELL:
+                alert = f"SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
 
-def price_near_fib(price, fib_levels, threshold=0.0005):
-    return any(abs(price - lvl) < threshold for lvl in fib_levels.values())
+        if alert:
+            try:
+                await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
+                logger.info(f"[ALERT SENT] {alert}")
+            except Exception as e:
+                logger.error(f"Failed to send Telegram alert: {e}")
 
-def rsi_divergence(rsi):
-    # Placeholder for divergence logic
-    return False
+async def send_news_and_events():
+    # News signals
+    logic_alerts, events = analyze_all_feeds()
+    for a in logic_alerts[:10]:  # Limit to top 10
+        msg = f"📰 {a['headline']} => {a['asset']} {a['signal']} (reason: {a['reason']})"
+        try:
+            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+        except Exception as e:
+            logger.error(f"[NEWS ALERT ERROR] {e}")
 
-def volume_spike(df, period=20, spike_mult=2):
-    if 'Volume' not in df.columns:
-        return False
-    avg_vol = df['Volume'].rolling(window=period).mean().iloc[-1]
-    last_vol = df['Volume'].iloc[-1]
-    return last_vol > avg_vol * spike_mult if avg_vol else False
+    # Economic calendar
+    major_events = analyze_events(fetch_all_calendar())
+    for e in major_events[:5]:  # Only most urgent events
+        msg = f"🗓 {e['date']} | {e['event']} | Impact: {e['impact']} | Affected: {e['affected']}"
+        try:
+            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+        except Exception as e:
+            logger.error(f"[ECON EVENT ALERT ERROR] {e}")
 
-def previous_candle_confirm(df):
-    if len(df) < 2:
-        return False, False
-    prev = df.iloc[-2]
-    bullish = get_scalar(prev['Close']) > get_scalar(prev['Open'])
-    bearish = get_scalar(prev['Close']) < get_scalar(prev['Open'])
-    return bullish, bearish
-
-def support_resistance(price, high, low, threshold=0.0005):
-    return abs(price - high) < threshold or abs(price - low) < threshold
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Cloud bot online. Telegram working!")
-
-async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not context.args:
-            await update.message.reply_text("Usage: /analyze SYMBOL (e.g. /analyze EURUSD)")
-            return
-        symbol = context.args[0].upper()
-        ticker = symbol + "=X"
-        df = yf.download(ticker, period="2mo", interval="1h")
-        if df.empty:
-            await update.message.reply_text(f"No data found for {symbol}.")
-            return
-        close = df['Close']
-        ema9 = calculate_ema(close, 9)
-        ema21 = calculate_ema(close, 21)
-        rsi14 = calculate_rsi(close, 14)
-        atr14 = calculate_atr(df, 14)
-        adx14 = calculate_adx(df, 14)
-        fib_levels, swing_high, swing_low = get_fibonacci_levels(close.tail(50))
-        last_price = get_scalar(close.iloc[-1])
-        last_ema9 = get_scalar(ema9.iloc[-1])
-        last_ema21 = get_scalar(ema21.iloc[-1])
-        last_rsi = get_scalar(rsi14.iloc[-1])
-        last_atr = get_scalar(atr14.iloc[-1])
-        last_adx = get_scalar(adx14.iloc[-1])
-        bullish_engulf = detect_bullish_engulfing(df.tail(3))
-        body_50 = candle_body_over_50(df.tail(1))
-        stack = check_stack(df)
-        prev_bullish, prev_bearish = previous_candle_confirm(df)
-        near_fib = price_near_fib(last_price, fib_levels)
-        near_sr = support_resistance(last_price, swing_high, swing_low)
-        vol_spike = volume_spike(df)
-        rsi_div = rsi_divergence(rsi14)
-        # Build results for each check for 16/16 + 6 logic
-        results = [
-            ("EMA9 > EMA21", last_ema9 > last_ema21),
-            ("RSI(14) > 55", last_rsi > 55),
-            ("Bullish Engulfing", bullish_engulf),
-            ("Candle Body > 50%", body_50),
-            ("ATR14 > 0", last_atr > 0),
-            ("ADX14 > 20", last_adx > 20),
-            ("Stack (Close > EMA9 > EMA21)", stack),
-            ("Prev Candle Bullish", prev_bullish),
-            ("Price near Fibonacci", near_fib),
-            ("Near Support/Resistance", near_sr),
-            ("Volume Spike", vol_spike),
-            ("No RSI Divergence", not rsi_div),
-        ]
-        score = sum(bool(x[1]) for x in results)
-        signal = "BUY ✅" if score >= 9 else "NEUTRAL ⚪️" if score >= 6 else "SELL ❌"
-        msg = (
-            f"MULTI-CRITERIA ANALYSIS for {symbol} ({datetime.now().strftime('%Y-%m-%d %H:%M')})\n"
-            f"Price: {last_price:.5f}\n"
-            f"EMA9: {last_ema9:.5f}\n"
-            f"EMA21: {last_ema21:.5f}\n"
-            f"RSI(14): {last_rsi:.2f}\n"
-            f"ATR14: {last_atr:.5f}\n"
-            f"ADX14: {last_adx:.2f}\n"
-            f"\n--- 16/16 + 6 STRATEGY CHECKS ---\n" +
-            "\n".join([f"{name}: {value}" for name, value in results]) +
-            f"\n\nFibonacci (last 50 H1): High: {swing_high:.5f} / Low: {swing_low:.5f}\n"
-            f"61.8%: {fib_levels['61.8%']:.5f}\n"
-            f"50.0%: {fib_levels['50.0%']:.5f}\n"
-            f"38.2%: {fib_levels['38.2%']:.5f}\n"
-            f"\nSignal Score: {score}/16\n"
-            f"Signal: {signal}\n"
-            f"\n---MANUAL CHECKS---\n"
-            f"- Check spread (avoid wide)\n"
-            f"- News/Calendar (avoid red)\n"
-            f"- Group Sentiment (forums, groups, X)\n"
-            f"- SL/TP at logical technical\n"
-            f"- Visual chart check before trading\n"
-        )
-        await update.message.reply_text(msg)
-    except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+async def bot_main_loop():
+    logger.info("Bot main loop started.")
+    while True:
+        try:
+            await send_pattern_alerts()
+            await send_news_and_events()
+        except Exception as e:
+            logger.error(f"[MAIN LOOP ERROR] {e}")
+        await asyncio.sleep(60 * 15)  # 15 minutes
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("analyze", analyze))
-    app.run_polling()
+    logger.info("Starting TomaForexBot cloudbot.py...")
+    asyncio.run(bot_main_loop())
