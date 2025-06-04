@@ -1,0 +1,5 @@
+environment:
+  internet: true
+
+setup:
+  - ./setup.sh
