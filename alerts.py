@@ -1,28 +1,28 @@
-# alerts.py
-import time
+def should_alert(signal_dict: dict, sentiment: str) -> bool:
+    """
+    Check if both the technical signal and sentiment agree.
+    """
+    if not signal_dict or not sentiment:
+        return False
 
-ALERT_LEVELS = {
-    "info": "ℹ️",
-    "warning": "⚠️",
-    "critical": "❗"
-}
-
-alert_history = {}  # (symbol, level): last_alert_time
-
-def should_alert(symbol, level, throttle_seconds=300):
-    now = time.time()
-    key = (symbol, level)
-    last = alert_history.get(key, 0)
-    if now - last > throttle_seconds:
-        alert_history[key] = now
+    if signal_dict.get("signal") == "BUY" and sentiment == "BULLISH":
+        return True
+    if signal_dict.get("signal") == "SELL" and sentiment == "BEARISH":
         return True
     return False
 
-def build_alert_message(symbol, signal, level, explanation="", chart_url=None):
-    emoji = ALERT_LEVELS.get(level, "🔔")
-    msg = f"{emoji} [{symbol}] {level.upper()} ALERT: {signal}\n"
-    if explanation:
-        msg += f"Details: {explanation}\n"
-    if chart_url:
-        msg += f"[Chart Link]({chart_url})"
-    return msg
+
+def build_alert_message(symbol: str, tf: str, signal: str, entry: float, sl: float, tp: float, atr_pips: int, reason: str, timestamp: str) -> str:
+    """
+    Create a formatted alert message.
+    """
+    return (
+        f"📢 <b>Auto Signal Alert</b>\n"
+        f"Symbol: <b>{symbol}</b> | TF: <b>{tf}</b>\n"
+        f"Signal: <b>{signal}</b>\n"
+        f"Entry: {entry:.5f}\n"
+        f"SL: {sl:.5f} | TP: {tp:.5f}\n"
+        f"ATR: {atr_pips} pips\n"
+        f"Reason: {reason}\n"
+        f"Time: {timestamp} UTC"
+    )

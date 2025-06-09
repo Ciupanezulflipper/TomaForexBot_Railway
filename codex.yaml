@@ -3,3 +3,4 @@ environment:
 
 setup:
   - ./setup.sh
+  - pytest        # optional separate step

@@ -20,3 +20,26 @@ def summarize_risk(df):
     df = calculate_volatility(df)
     risk = classify_risk_level(df)
     return f"Market Volatility: {df['volatility'].iloc[-1]:.2f}% – Risk Level: {risk}"
+# riskanalysis.py
+
+def evaluate_risk_zone(price, fib_levels):
+    """
+    Check if price is in a high-risk zone based on Fibonacci levels.
+    Returns:
+        str: 'LOW', 'MEDIUM', 'HIGH'
+    """
+    try:
+        price = float(price)
+        levels = [float(val) for val in fib_levels.values()]
+        levels.sort()
+
+        if price <= levels[1] or price >= levels[-2]:
+            return "HIGH"
+        elif levels[2] <= price <= levels[-3]:
+            return "LOW"
+        else:
+            return "MEDIUM"
+    except Exception as e:
+        print(f"[ERROR] evaluate_risk_zone: {e}")
+        return "UNKNOWN"
+

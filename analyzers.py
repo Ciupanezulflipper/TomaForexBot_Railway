@@ -1,167 +1,80 @@
-import os
-from dotenv import load_dotenv
-import pandas as pd
-from datetime import datetime
-from marketdata import get_ohlc
+import logging
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_patterns
-from charting import generate_pro_chart_async
-from telegramsender import send_telegram_message, send_telegram_photo
-from macrofilter import check_macro_filter
+from marketdata import get_ohlc
+from fibonacci import get_fibonacci_levels
+from weights_config import get_weights
+from riskanalysis import evaluate_risk_zone
 
-load_dotenv()
-MIN_SCORE = int(os.getenv("MIN_SIGNAL_SCORE", 10))
-MACRO_MODE = os.getenv("MACRO_FILTER_MODE", "warn").lower()  # 'block' or 'warn'
+logger = logging.getLogger(__name__)
 
+def calculate_signal_score(rsi_score, pattern_score, ema_score, fib_score, risk_score):
+    weights = get_weights()
+    total = (
+        weights['rsi'] * rsi_score +
+        weights['pattern'] * pattern_score +
+        weights['ema'] * ema_score +
+        weights['fibonacci'] * fib_score +
+        weights['risk'] * risk_score
+    )
+    return total
 
-def score_trade(df, tf):
-    score = 0
-    reasons = []
-
-    # --- FIX: Flatten columns if MultiIndex from Yahoo ---
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = ['_'.join([str(c) for c in col if c]) for col in df.columns.values]
-    df.columns = df.columns.str.lower()
-    print("[DEBUG] Columns in DataFrame:", df.columns.tolist())
-
+async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
     try:
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        tf_list = ['H1', 'H4', 'D1']
+        results = []
 
-        # Ensure EMA columns exist
-        if "ema9" not in df.columns:
-            df["ema9"] = df["close"].ewm(span=9, adjust=False).mean()
-        if "ema21" not in df.columns:
-            df["ema21"] = df["close"].ewm(span=21, adjust=False).mean()
+        for tf in tf_list:
+            df = await get_ohlc(symbol, tf, bars=150)
+            if df is None or df.empty:
+                continue
 
-        ema9 = df["ema9"]
-        ema21 = df["ema21"]
-        rsi = calculate_rsi(df["close"], 14)
+            ema_signal = calculate_ema(df)
+            rsi_value = calculate_rsi(df)
+            patterns = detect_patterns(df)
+            fib = get_fibonacci_levels(df)
+            risk_zone = evaluate_risk_zone(df)
 
-        # Use detect_patterns instead of detect_candle_patterns:
-        from patterns import detect_patterns
-        patterns_raw = detect_patterns(df)
-        patterns = []
-        if patterns_raw['bullish_engulfing']:
-            patterns.append("Bullish Engulfing")
-        if patterns_raw['bearish_engulfing']:
-            patterns.append("Bearish Engulfing")
-        if patterns_raw['pin_bar'] == "bullish":
-            patterns.append("Bullish Pin Bar")
-        if patterns_raw['pin_bar'] == "bearish":
-            patterns.append("Bearish Pin Bar")
+            pattern_score = len(patterns)
+            ema_score = 1 if ema_signal else 0
+            rsi_score = 1 if (rsi_value < 30 or rsi_value > 70) else 0
+            fib_score = fib.get("score", 0)
+            risk_score = 1 if risk_zone == "safe" else 0
 
-        # --- Core criteria ---
-        if ema9.iloc[-1] > ema21.iloc[-1]:
-            score += 1
-            reasons.append("ema9>ema21")
-        if ema9.iloc[-1] < ema21.iloc[-1]:
-            score += 1
-            reasons.append("ema9<ema21")
+            frame_score = calculate_signal_score(rsi_score, pattern_score, ema_score, fib_score, risk_score)
+            signal = "BUY" if ema_signal and rsi_value < 30 else "SELL" if not ema_signal and rsi_value > 70 else "WAIT"
 
-        if rsi.iloc[-1] < 30:
-            score += 1
-            reasons.append("rsi<30")
-        elif rsi.iloc[-1] > 70:
-            score += 1
-            reasons.append("rsi>70")
-        elif rsi.iloc[-1] < 45 or rsi.iloc[-1] > 55:
-            score += 1
-            reasons.append("rsi active")
+            results.append({
+                "tf": tf,
+                "score": frame_score,
+                "signal": signal,
+                "rsi": rsi_value,
+                "ema": ema_signal,
+                "patterns": patterns,
+                "fib": fib,
+                "risk": risk_zone,
+            })
 
-        try:
-            last_rsi = float(rsi.iloc[-1])
-            prev_rsi = float(rsi.iloc[-2])
-            last_close = float(df["close"].iloc[-1])
-            prev_close = float(df["close"].iloc[-2])
-            if last_rsi > prev_rsi and last_close < prev_close:
-                score += 1
-                reasons.append("rsi divergence")
-        except Exception as e:
-            reasons.append(f"rsi divergence check failed: {e}")
+        if not results:
+            return {"confirmed": False, "signal": "WAIT", "reason": "No valid timeframe data."}
 
-        if patterns:
-            score += len(patterns)
-            reasons.append(f"pattern(s): {', '.join(patterns)}")
+        buy_count = sum(1 for r in results if r["signal"] == "BUY")
+        sell_count = sum(1 for r in results if r["signal"] == "SELL")
 
-        body = abs(last["close"] - last["open"])
-        range_ = abs(last["high"] - last["low"])
-        if body > 0.5 * range_:
-            score += 1
-            reasons.append("Strong candle body")
+        final_signal = "BUY" if buy_count >= 2 else "SELL" if sell_count >= 2 else "WAIT"
+        avg_score = sum(r["score"] for r in results) / len(results)
 
-        if "volume" in df.columns and df["volume"].iloc[-1] > df["volume"].rolling(20).mean().iloc[-1]:
-            score += 1
-            reasons.append("volume spike")
+        confirmed = avg_score >= 4 and final_signal in ["BUY", "SELL"]
 
-        if tf in ["H1", "H4", "D1"]:
-            score += 1
-            reasons.append("Multi-TF: " + tf)
-
-        score += 1; reasons.append("SL/TP OK")
-        score += 1; reasons.append("No red news window")
-        score += 1; reasons.append("EMA structure clear")
-        score += 1; reasons.append("Fibo zone match")
-        score += 1; reasons.append("Confirmation candle")
-        score += 1; reasons.append("Spread OK")
-        score += 1; reasons.append("rsi not flat")
-
-        return score, reasons, patterns
+        return {
+            "confirmed": confirmed,
+            "signal": final_signal,
+            "avg_score": avg_score,
+            "reason": f"{buy_count} BUY vs {sell_count} SELL from {len(results)} timeframes",
+            "details": results
+        }
 
     except Exception as e:
-        return 0, [f"Scoring error: {str(e)}"], []
+        logger.error(f"[analyze_symbol_multi_tf] Error for {symbol}: {e}")
+        return {"confirmed": False, "signal": "WAIT", "reason": str(e)}
 
-async def analyze_symbol_multi_tf(symbol, chat_id=None):
-    timeframes = {
-        "H1": "TIMEFRAME_H1",
-        "H4": "TIMEFRAME_H4",
-        "D1": "TIMEFRAME_D1",
-    }
-
-    for tf, tf_name in timeframes.items():
-        df = await get_ohlc(symbol, tf, bars=150)
-        if df is None or df.empty:
-            continue
-
-        score, reasons, patterns = score_trade(df, tf)
-        macro = check_macro_filter(symbol)
-
-        print(f"[DEBUG] {symbol} {tf} → score={score} | macro_block={macro.get('block')} | reasons={reasons}")
-
-        signal = "BUY" if "rsi<30" in reasons else "SELL" if "rsi>70" in reasons else "NEUTRAL"
-        macro_note = macro.get("note", "✅ None")
-        macro_block = macro.get("block", False)
-
-        if macro_block and MACRO_MODE == "block":
-            msg = (
-                f"📊 *{symbol} – {tf}*\n"
-                f"🔹 Signal: {signal} | Score: {score}/16\n"
-                f"🕒 News Risk: {macro_note}\n"
-                f"🚫 Trade skipped due to high-impact news."
-            )
-            await send_telegram_message(msg, chat_id)
-            continue
-
-        if score >= MIN_SCORE:
-            msg = (
-                f"📊 *{symbol} – {tf}*\n"
-                f"🔹 Signal: {signal} | Score: {score}/16\n"
-                f"📈 Reasons: {', '.join(reasons)}\n"
-                f"🕒 News Risk: {macro_note}"
-            )
-            await send_telegram_message(msg, chat_id)
-
-            chart_path = await generate_pro_chart_async(df, symbol, tf, score, signal)
-            await send_telegram_photo(chart_path, chat_id)
-        else:
-            await send_telegram_message(
-                f"⚠️ {symbol} {tf} skipped – score {score}/16 or macro blocked.", chat_id
-            )
-def analyze_all_feeds():
-    # ... your existing news scraping and analysis logic
-    logic_alerts = []
-    # Analyze and fill logic_alerts as you already do...
-
-    # Get economic calendar events
-    events = fetch_major_events()
-    return logic_alerts, events

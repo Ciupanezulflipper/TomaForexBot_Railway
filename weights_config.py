@@ -1,13 +1,10 @@
-# weights_config.py
+# Weight configuration for signal scoring
 
-# Scoring Weights (default values)
-SCORING_WEIGHTS = {
-    "ema_cross": 2,
-    "rsi_neutral": 1,
-    "strong_pattern": 2,
-    "fib_match": 1,
-    "volume_spike": 1
-}
-
-# Signal threshold (only alert if score >= this)
-MINIMUM_SCORE = 4
+def get_weights():
+    return {
+        "rsi": 0.25,        # 25% weight
+        "pattern": 0.25,    # 25% weight
+        "ema": 0.2,         # 20% weight
+        "fibonacci": 0.2,   # 20% weight
+        "risk": 0.1         # 10% weight
+    }

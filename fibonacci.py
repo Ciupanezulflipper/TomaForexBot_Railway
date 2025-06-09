@@ -24,3 +24,16 @@ def match_fibonacci_price(price, fib_levels, threshold=0.001):
         if abs(price_val - level_val) <= threshold:
             return label
     return None
+
+def get_fibonacci_levels(price, direction="up"):
+    """Wrapper to use your existing logic for compatibility."""
+    if direction == "up":
+        high = price
+        low = price * 0.9  # estimate for now; can be adjusted
+    elif direction == "down":
+        high = price * 1.1
+        low = price
+    else:
+        raise ValueError("Direction must be 'up' or 'down'")
+
+    return calculate_fibonacci_levels(high, low)

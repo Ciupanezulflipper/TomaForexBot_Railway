@@ -1,3 +1,6 @@
-git add .
-git commit -m "Switch to railway.json for proper Nixpacks start"
-git push
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "start": "python main.py"
+}

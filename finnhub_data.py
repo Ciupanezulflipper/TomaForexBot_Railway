@@ -44,7 +44,7 @@ async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
     url = f"{base_url}?symbol={mapped_symbol}&resolution={resolution}&from={past}&to={now}&token={API_KEY}"
 
     try:
-         async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get(url) as res:
                 data = await res.json()
 

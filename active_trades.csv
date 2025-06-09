@@ -1,0 +1,4 @@
+pair,type,entry_price,volume,stop_loss,take_profit
+EURUSD,SELL,1.13805,0.02,1.145,1.12438
+GBPUSD,SELL,1.35107,0.02,1.358,1.3451
+USDJPY,BUY,149.28,0.02,148.5,150.0

@@ -47,3 +47,24 @@ def detect_patterns(df):
     results['bearish_engulfing'] = detect_bearish_engulfing(df)
     results['pin_bar'] = detect_pin_bar(df)
     return results
+
+
+def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    """Add a 'pattern' column with simple candle pattern detection."""
+    patterns = []
+    for i in range(len(df)):
+        sub = df.iloc[: i + 1]
+        label = None
+        if detect_bullish_engulfing(sub):
+            label = "Bullish Engulfing"
+        elif detect_bearish_engulfing(sub):
+            label = "Bearish Engulfing"
+        else:
+            pin = detect_pin_bar(sub)
+            if pin:
+                label = f"{pin} pin bar"
+        patterns.append(label or "None")
+
+    df = df.copy()
+    df["pattern"] = patterns
+    return df

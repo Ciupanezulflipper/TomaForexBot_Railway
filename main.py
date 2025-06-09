@@ -1,9 +1,7 @@
-# TomaForexBot/main.py
-
 import logging
 
 logging.basicConfig(
-    filename="bot.log",  # Log to file. Remove filename=... to log to console.
+    filename="bot.log",  # Remove filename=... for console logs while debugging
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -12,23 +10,12 @@ logger = logging.getLogger(__name__)
 import threading
 import uvicorn
 import asyncio
-import nest_asyncio
-import time
 from api_receiver import app
-from marketdata import get_mt5_data
+from marketdata import get_ohlc
 from botstrategies import analyze_symbol
 from telegrambot import start_telegram_listener
 
-nest_asyncio.apply()
-
-def run_telegram():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(start_telegram_listener())
-    except Exception as e:
-        logger.exception("Telegram bot crashed: %s", e)
-
+# Analysis loop
 async def run_analysis_loop():
     symbols = ["XAUUSD", "XAGUSD", "EURUSD", "US30M", "INDNASDAQ"]
     while True:
@@ -50,12 +37,7 @@ async def run_analysis_loop():
         await asyncio.sleep(900)  # 15 minutes
 
 def run_analysis():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(run_analysis_loop())
-    except Exception as e:
-        logger.exception("Analysis thread crashed: %s", e)
+    asyncio.run(run_analysis_loop())
 
 def run_api():
     try:
@@ -64,10 +46,10 @@ def run_api():
         logger.exception("API server crashed: %s", e)
 
 if __name__ == "__main__":
-    t1 = threading.Thread(target=run_telegram, name="TelegramThread")
-    t2 = threading.Thread(target=run_analysis, name="AnalysisThread")
-
+    # Start background threads FIRST
+    t1 = threading.Thread(target=run_analysis, name="AnalysisThread", daemon=True)
+    t2 = threading.Thread(target=run_api, name="ApiThread", daemon=True)
     t1.start()
     t2.start()
-
-    run_api()
+    # Telegram bot runs in main thread
+    start_telegram_listener()

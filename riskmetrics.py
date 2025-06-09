@@ -1,23 +1,20 @@
-# riskmetrics.py
-import numpy as np
+import pandas as pd
 
-def calc_atr(df, period=14):
-    df = df.copy()
-    df['H-L'] = df['High'] - df['Low']
-    df['H-PC'] = abs(df['High'] - df['Close'].shift(1))
-    df['L-PC'] = abs(df['Low'] - df['Close'].shift(1))
-    tr = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
-    return tr.rolling(window=period).mean().iloc[-1]
+def calc_atr(df: pd.DataFrame, period: int = 14) -> float:
+    """
+    Calculate the Average True Range (ATR) from OHLCV data.
+    """
+    if df is None or df.empty or len(df) < period + 1:
+        return 0.0
 
-def volatility_position_size(account_balance, risk_pct, atr, pip_value):
-    risk_amount = account_balance * risk_pct
-    if atr == 0 or pip_value == 0:
-        return 0
-    lots = risk_amount / (atr * pip_value)
-    return lots
+    high = df['high']
+    low = df['low']
+    close = df['close']
 
-def sharpe_ratio(df):
-    returns = df['Close'].pct_change().dropna()
-    if len(returns) < 2:
-        return 0
-    return (returns.mean() / returns.std()) * np.sqrt(252)
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    atr = tr.rolling(window=period).mean()
+    return round(atr.iloc[-1], 5) if not atr.empty else 0.0

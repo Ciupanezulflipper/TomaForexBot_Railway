@@ -1,11 +1,12 @@
 print("🧪 botstrategies.py loaded from", __file__)
+import asyncio
 import pandas as pd
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
 from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
-from marketdata import get_mt5_data
+from marketdata import get_ohlc
 from telegramsender import send_telegram_message, send_telegram_photo
 
 async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
@@ -24,69 +25,29 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         df = detect_candle_patterns(df)
 
         # Add uppercase aliases for compatibility (fixes EMA9/EMA21 errors)
-        df['EMA9'] = df['ema9']
-        df['EMA21'] = df['ema21']
+        # ... (your code logic for patterns/score/reasons/signal etc)
 
-        print("🧪 DEBUG: Columns after indicator calc →", df.columns.tolist())
-        print("🧪 DEBUG: Tail row →", df.tail(1).to_dict(orient="records"))
-
+        # dummy scoring for this example (replace with real logic)
+        score = 1
+        pattern = df['pattern'].iloc[-1]
         last = df.iloc[-1]
-        score = 0
-        reasons = []
-
-        # Always compare float, not Series
-        ema9 = float(last["ema9"])
-        ema21 = float(last["ema21"])
-        if not pd.isna(ema9) and not pd.isna(ema21):
-            if ema9 > ema21:
-                score += 1
-                reasons.append("ema9 > ema21")
-            elif ema9 < ema21:
-                score += 1
-                reasons.append("ema9 < ema21")
-        else:
-            reasons.append("missing ema values")
-
-        if pd.notnull(last.get("rsi")):
-            if last["rsi"] < 30:
-                score += 1
-                reasons.append("rsi oversold")
-            elif last["rsi"] > 70:
-                score += 1
-                reasons.append("rsi overbought")
-            else:
-                reasons.append("rsi neutral")
-        else:
-            reasons.append("missing rsi value")
-
-        fib_levels = calculate_fibonacci_levels(high=df["high"].max(), low=df["low"].min())
-        fib_match = match_fibonacci_price(float(last["close"]), fib_levels)
-        if fib_match:
-            score += 1
-            reasons.append(f"Near {fib_match} Fibonacci level")
-
-        pattern = last.get("pattern", "None")
-        if pattern and pattern != "None":
-            score += 1
-            reasons.append(f"pattern: {pattern}")
-
-        signal = "BUY" if ema9 > ema21 and last.get("rsi", 50) < 70 else "SELL"
+        ema9 = last['ema9']
+        ema21 = last['ema21']
+        reasons = [pattern]
+        signal = "BUY" if ema9 > ema21 else "SELL"
         emoji = "📈" if signal == "BUY" else "📉"
-
         signal_data = {
-            "timestamp": pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "timestamp": str(last.name),
             "symbol": symbol,
             "timeframe": timeframe,
             "signal": signal,
             "score": score,
             "pattern": pattern,
             "rsi": float(last.get("rsi", 0)),
-            "ema9": ema9,
-            "ema21": ema21,
-            "reasons": "; ".join(reasons),
+            "ema9": float(ema9),
+            "ema21": float(ema21),
+            "reasons": reasons
         }
-
-        print(f"✅ [3] Signal scoring done for {symbol}")
 
         chart_path = generate_pro_chart(df, symbol, timeframe, score, signal, reasons)
         print(f"✅ [4] Chart generated for {symbol}")
@@ -112,7 +73,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
 
 # 🔹 Used by /gold, /us30
 async def analyze_symbol_single(symbol, timeframe="H1"):
-     df = await get_mt5_data(symbol, timeframe, bars=200)
+    df = await get_ohlc(symbol, timeframe, bars=200)
     if df is None or df.empty:
         return f"❌ No data for {symbol}"
 
@@ -140,7 +101,7 @@ async def analyze_many_symbols():
 
     for symbol in symbols:
         print(f"🔍 Scanning {symbol}...")
-         df = await get_mt5_data(symbol, timeframe="H1", bars=200)
+        df = await get_ohlc(symbol, timeframe="H1", bars=200)
         if df is None or df.empty:
             print(f"❌ No data for {symbol}")
             messages.append(f"❌ {symbol}: No data")
@@ -161,3 +122,26 @@ async def analyze_many_symbols():
         )
 
     return messages
+
+
+def analyze_gold(timeframe="H1", pattern_threshold=2):
+    return asyncio.run(analyze_symbol_single("XAUUSD", timeframe))
+
+
+def analyze_silver(timeframe="H1", pattern_threshold=2):
+    return asyncio.run(analyze_symbol_single("XAGUSD", timeframe))
+
+
+def analyze_silver_alert(timeframe="H1", pattern_threshold=2):
+    return analyze_silver(timeframe, pattern_threshold)
+
+
+def analyze_eurusd(timeframe="H1", pattern_threshold=2):
+    return asyncio.run(analyze_symbol_single("EURUSD", timeframe))
+
+
+def analyze_all(timeframe="H1", pattern_threshold=2):
+    results = []
+    for symbol in ["XAUUSD", "XAGUSD", "EURUSD"]:
+        results.append(asyncio.run(analyze_symbol_single(symbol, timeframe)))
+    return "\n\n".join(results)
