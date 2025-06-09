@@ -1,6 +1,30 @@
-__pycache__/ 
-*.pyc 
-.env 
-*.log 
-bot.log 
-trades.log 
+# Ignore system files
+__pycache__/
+*.pyc
+.DS_Store
+
+# Ignore secret files
+.env
+*.env
+secrets.json
+tokens.json
+
+# Ignore test logs & outputs
+*.log
+*.csv
+*.sqlite3
+test_output/
+debug_output/
+
+# Ignore unused binaries
+vs_BuildTools.exe
+
+# Ignore notebooks or dev files
+*.ipynb
+dev_notes/
+*.bak
+
+# Ignore temporary test files
+ping_test.py
+test_*.py
+scratch_*.py
