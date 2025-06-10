@@ -3,14 +3,11 @@
 import os
 import pandas as pd
 import yfinance as yf
-import aiohttp
-import asyncio
 from dotenv import load_dotenv
 from finnhub_data import get_finnhub_data
 
 load_dotenv()
 
-# Yahoo symbol map
 YAHOO_SYMBOLS = {
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
@@ -35,33 +32,25 @@ async def get_yahoo_data(symbol, bars):
     yf_symbol = YAHOO_SYMBOLS.get(symbol, symbol)
     try:
         print(f"[Yahoo] Fetching data for {symbol} → {yf_symbol}")
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_symbol}?range=30d&interval=1h"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
+        df = yf.download(yf_symbol, period="30d", interval="1h", progress=False)
 
-        chart_data = data.get("chart", {}).get("result", [{}])[0]
-        timestamps = chart_data.get("timestamp", [])
-        quotes = chart_data.get("indicators", {}).get("quote", [{}])[0]
-
-        if not timestamps or not quotes:
+        if df.empty:
             return pd.DataFrame()
 
-        df = pd.DataFrame({
-            "time": pd.to_datetime(timestamps, unit="s"),
-            "open": quotes.get("open"),
-            "high": quotes.get("high"),
-            "low": quotes.get("low"),
-            "close": quotes.get("close"),
-            "volume": quotes.get("volume"),
-        }).set_index("time")
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
+        df.columns = df.columns.str.lower()
+        df.columns.name = None  # 🔥 this line fixes your issue
+
+        df = df[["open", "high", "low", "close", "volume"]]
         df = df.dropna().tail(bars)
         return df
 
     except Exception as e:
         print(f"[Yahoo] Error fetching {symbol}: {e}")
         return pd.DataFrame()
+
 
 async def get_ohlc(symbol, timeframe="H1", bars=200):
     print(f"[OHLC] Start fetching {symbol} - {timeframe}")
@@ -71,7 +60,7 @@ async def get_ohlc(symbol, timeframe="H1", bars=200):
         print(f"[Finnhub] Success for {symbol}")
     else:
         print(f"[Finnhub] Failed. Falling back to Yahoo for {symbol}")
-        df = await get_yahoo_data(symbol, bars)
+        df = await get_yahoo_data(symbol, bars)  # ✅ await here
 
     if df.empty:
         print(f"[ERROR] No data available for {symbol}")

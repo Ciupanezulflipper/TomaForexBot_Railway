@@ -1,4 +1,5 @@
 print("🧪 botstrategies.py loaded from", __file__)
+
 import asyncio
 import pandas as pd
 from indicators import calculate_ema, calculate_rsi
@@ -7,14 +8,13 @@ from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
 from marketdata import get_ohlc
-from telegramsender import send_telegram_message, send_telegram_photo
+from telegramsender import send_telegram_message, send_tfelegram_photo
 
 async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
     if df is None or df.empty:
         print(f"❌ No data returned for {symbol}")
         return []
 
-    # Always lowercase all columns
     df.columns = df.columns.str.lower()
 
     try:
@@ -24,18 +24,23 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         df["rsi"] = calculate_rsi(df["close"], 14)
         df = detect_candle_patterns(df)
 
-        # Add uppercase aliases for compatibility (fixes EMA9/EMA21 errors)
-        # ... (your code logic for patterns/score/reasons/signal etc)
-
-        # dummy scoring for this example (replace with real logic)
-        score = 1
-        pattern = df['pattern'].iloc[-1]
         last = df.iloc[-1]
-        ema9 = last['ema9']
-        ema21 = last['ema21']
-        reasons = [pattern]
+        pattern = last.get('pattern', 'Unknown')
+
+        ema9 = last.get("ema9")
+        ema21 = last.get("ema21")
+        rsi_val = last.get("rsi")
+
+        # ✅ Safe float conversion
+        ema9 = float(ema9) if pd.notnull(ema9) else 0.0
+        ema21 = float(ema21) if pd.notnull(ema21) else 0.0
+        rsi = float(rsi_val) if pd.notnull(rsi_val) and not isinstance(rsi_val, pd.Series) else 0.0
+
         signal = "BUY" if ema9 > ema21 else "SELL"
         emoji = "📈" if signal == "BUY" else "📉"
+        reasons = [pattern]
+        score = 1  # Placeholder for your real scoring logic
+
         signal_data = {
             "timestamp": str(last.name),
             "symbol": symbol,
@@ -43,9 +48,9 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
             "signal": signal,
             "score": score,
             "pattern": pattern,
-            "rsi": float(last.get("rsi", 0)),
-            "ema9": float(ema9),
-            "ema21": float(ema21),
+            "rsi": rsi,
+            "ema9": ema9,
+            "ema21": ema21,
             "reasons": reasons
         }
 
@@ -57,12 +62,12 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
                 f"{emoji} {signal_data['timestamp']} – {symbol} ({timeframe})\n"
                 f"Signal: {signal} | Score: {score}\n"
                 f"pattern: {pattern}\n"
-                f"rsi: {float(last.get('rsi', 0)):.2f} | ema9: {ema9:.4f} | ema21: {ema21:.4f}\n"
+                f"rsi: {rsi:.2f} | ema9: {ema9:.4f} | ema21: {ema21:.4f}\n"
                 f"Reasons: {'; '.join(reasons)}"
             )
             await send_telegram_message(msg)
             if chart_path:
-                await send_telegram_photo(chart_path)
+                await send_tfelegram_photo(chart_path)
 
         log_to_csv(signal_data)
         return [signal_data]
@@ -71,7 +76,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         print(f"❌ ERROR during analyze_symbol for {symbol}: {e}")
         return []
 
-# 🔹 Used by /gold, /us30
+# 🔹 Single symbol analysis entry point
 async def analyze_symbol_single(symbol, timeframe="H1"):
     df = await get_ohlc(symbol, timeframe, bars=200)
     if df is None or df.empty:
@@ -91,7 +96,7 @@ async def analyze_symbol_single(symbol, timeframe="H1"):
         f"Reasons: {r['reasons']}"
     )
 
-# 🔹 Used by /scanall
+# 🔹 Multiple symbol scanner
 async def analyze_many_symbols():
     symbols = [
         "XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY",
@@ -123,22 +128,18 @@ async def analyze_many_symbols():
 
     return messages
 
-
+# 🟡 Entry points for commands
 def analyze_gold(timeframe="H1", pattern_threshold=2):
     return asyncio.run(analyze_symbol_single("XAUUSD", timeframe))
-
 
 def analyze_silver(timeframe="H1", pattern_threshold=2):
     return asyncio.run(analyze_symbol_single("XAGUSD", timeframe))
 
-
 def analyze_silver_alert(timeframe="H1", pattern_threshold=2):
     return analyze_silver(timeframe, pattern_threshold)
 
-
 def analyze_eurusd(timeframe="H1", pattern_threshold=2):
     return asyncio.run(analyze_symbol_single("EURUSD", timeframe))
-
 
 def analyze_all(timeframe="H1", pattern_threshold=2):
     results = []

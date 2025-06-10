@@ -7,7 +7,8 @@ print(f"[DEBUG] indicators.py loaded from {os.path.abspath(__file__)}")
 
 def calculate_ema(series, period=9):
     print(f"[DEBUG] EMA input: {series.name}, length={len(series)}")
-    return series.ewm(span=period, adjust=False).mean()
+    ema_series = series.ewm(span=period, adjust=False).mean()
+    return ema_series.iloc[-1]  # ✅ return last EMA value
 
 def calculate_rsi(series, period=14):
     print(f"[DEBUG] rsi input: {series.name}, length={len(series)}")
@@ -20,4 +21,4 @@ def calculate_rsi(series, period=14):
 
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return rsi.iloc[-1]  # ✅ return last RSI value

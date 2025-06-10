@@ -29,8 +29,14 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
             if df is None or df.empty:
                 continue
 
-            ema_signal = calculate_ema(df)
-            rsi_value = calculate_rsi(df)
+            df.name = f"{symbol}_{tf}"
+
+            # Fix: calculate EMAs and use last value for signal
+            df["ema9"] = calculate_ema(df["close"], 9)
+            df["ema21"] = calculate_ema(df["close"], 21)
+            ema_signal = df["ema9"].iloc[-1] > df["ema21"].iloc[-1]
+
+            rsi_value = calculate_rsi(df['close'])
             patterns = detect_patterns(df)
             fib = get_fibonacci_levels(df)
             risk_zone = evaluate_risk_zone(df)
@@ -49,7 +55,7 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
                 "score": frame_score,
                 "signal": signal,
                 "rsi": rsi_value,
-                "ema": ema_signal,
+                "ema": f"{df['ema9'].iloc[-1]:.4f} > {df['ema21'].iloc[-1]:.4f}" if ema_signal else f"{df['ema9'].iloc[-1]:.4f} < {df['ema21'].iloc[-1]:.4f}",
                 "patterns": patterns,
                 "fib": fib,
                 "risk": risk_zone,
