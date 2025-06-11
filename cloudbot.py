@@ -19,12 +19,12 @@ from news_feeds import analyze_all_feeds
 from patterns import detect_candle_patterns
 from indicators import calculate_rsi
 
-# Environment setup
+# Load environment
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
-# Logging setup
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -32,13 +32,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global bot instance for alerts
+# Global bot instance
 bot = Bot(token=TELEGRAM_TOKEN)
 
-def score_bar(score):
-    units = min(abs(score), 5)
-    blocks = "█" * units
+
+# ────────────── Command: /calendar ──────────────
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        events = analyze_events(fetch_all_calendar())
         if not events:
             await update.message.reply_text("📅 No major economic events right now.")
             return
@@ -48,20 +49,18 @@ async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"{e['date']} - {e['event']} - {e['impact']}\n"
 
         await update.message.reply_text(msg)
-
     except Exception as e:
-        logger.error(f"Calendar error: {e}")
+        logger.error(f"[Calendar] {e}")
         await update.message.reply_text(f"❌ Error: {e}")
 
-# ══════════════════ BACKGROUND ALERT SYSTEM ══════════════════
 
+# ────────────── Pattern Alerts ──────────────
 async def send_pattern_alerts():
-    """Send pattern-based trading alerts"""
     PAIRS = ["EURUSD", "GBPUSD", "USDJPY"]
     TIMEFRAME = "H1"
     MIN_RSI_BUY = 35
     MAX_RSI_SELL = 65
-    
+
     for symbol in PAIRS:
         try:
             df = await get_ohlc(symbol, TIMEFRAME, bars=100)
@@ -80,89 +79,91 @@ async def send_pattern_alerts():
 
             alert = None
 
-            # Bullish patterns + low RSI = Buy alert
             if any(p in last_pattern for p in ["Bullish Engulfing", "Hammer", "Morning Star"]):
                 if last_rsi is not None and last_rsi < MIN_RSI_BUY:
                     alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
 
-            # Bearish patterns + high RSI = Sell alert
             if any(p in last_pattern for p in ["Bearish Engulfing", "Shooting Star", "Evening Star"]):
                 if last_rsi is not None and last_rsi > MAX_RSI_SELL:
                     alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
 
+            if alert:
+                await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
+
+        except Exception as e:
+            logger.error(f"[Pattern Alert] {symbol}: {e}")
+
+
+# ────────────── News + Calendar Alerts ──────────────
 async def send_news_and_events():
+    try:
+        news = await fetch_combined_news()
+        if news:
+            headlines = [f"📰 {item['headline']}" for item in news[:3]]
+            msg = "🗞 Top News:\n" + "\n".join(headlines)
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
 
-        # Economic calendar
-        major_events = analyze_events(fetch_all_calendar())
-        for event in major_events[:3]:  # Only most urgent events
+        events = analyze_events(fetch_all_calendar())
+        for event in events[:3]:
             msg = f"🗓 {event['date']} | {event['event']}\nImpact: {event['impact']} | Affected: {event['affected']}"
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-
     except Exception as e:
-        logger.error(f"[NEWS/EVENTS ERROR] {e}")
+        logger.error(f"[News/Events] {e}")
 
+
+# ────────────── Background Alert Loop ──────────────
 async def background_alerts():
-    """Background task for sending periodic alerts"""
     logger.info("Background alert system started")
     while True:
         try:
             await send_pattern_alerts()
             await send_news_and_events()
-            logger.info("Alert cycle completed")
+            logger.info("✅ Alerts sent")
         except Exception as e:
-            logger.error(f"[BACKGROUND ALERTS ERROR] {e}")
-        
-        # Wait 15 minutes before next alert cycle
+            logger.error(f"[Background Loop] {e}")
         await asyncio.sleep(60 * 15)
 
-# ══════════════════ CONNECTION CHECK ══════════════════
 
+# ────────────── Connection Check ──────────────
 async def check_connections() -> bool:
-    """Verify data source connectivity before starting the bot."""
     finnhub_ok, yahoo_ok = await asyncio.gather(
         connect_finnhub(), connect_yahoo()
     )
     if not (finnhub_ok or yahoo_ok):
         logger.error("❌ Both Finnhub and Yahoo connections failed.")
         return False
-
     if not finnhub_ok:
-        logger.warning("⚠️ Finnhub connection failed; using Yahoo only")
+        logger.warning("⚠️ Finnhub failed")
     if not yahoo_ok:
-        logger.warning("⚠️ Yahoo connection failed; using Finnhub only")
-
+        logger.warning("⚠️ Yahoo failed")
     return True
 
-# ══════════════════ MAIN BOT RUNNER ══════════════════
 
+# ────────────── Main Runner ──────────────
 async def run_bot():
-    """Main function that runs both command handling and background alerts"""
     if not await check_connections():
         return
 
-    # Create the application
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-    # Add command handlers
-    app.add_handler(CommandHandler("start", start_command))
+    # Add command handlers (add more as needed)
     app.add_handler(CommandHandler("status", handle_status))
-    app.add_handler(CommandHandler("analyze", analyze_command))
-    app.add_handler(CommandHandler("chart", chart_command))
-    app.add_handler(CommandHandler("news", news_command))
     app.add_handler(CommandHandler("calendar", calendar_command))
 
-    logger.info("🤖 TomaForexBot initialized with command handlers")
+    logger.info("🤖 TomaForexBot started")
 
-    # Start background task for alerts
+    # Start background alerts
     alert_task = asyncio.create_task(background_alerts())
-    
-    # Start polling (this will run indefinitely)
+
     async with app:
         await app.start()
-        logger.info("🔄 Bot polling started")
-        
-        # Run both polling and background alerts concurrently
-        await asyncio.gather(
-            app.updater.start_polling(),
-            alert_task
+        logger.info("🔄 Polling started")
+        await asyncio.gather(app.updater.start_polling(), alert_task)
+
+
+# ────────────── Entry Point ──────────────
+if __name__ == "__main__":
+    try:
+        asyncio.run(run_bot())
+    except Exception as e:
+        logger.error(f"[MAIN ERROR] {e}")
