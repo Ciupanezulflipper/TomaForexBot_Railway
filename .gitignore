@@ -28,3 +28,8 @@ dev_notes/
 ping_test.py
 test_*.py
 scratch_*.py
+
+# Ignore generated chart images
+charts/
+*.png
+

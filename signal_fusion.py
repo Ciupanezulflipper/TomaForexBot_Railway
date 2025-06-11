@@ -19,7 +19,7 @@ def calculate_signal_score(rsi_score, pattern_score, ema_score, fib_score, risk_
     )
     return total
 
-async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
+async def generate_trade_decision(symbol, chat_id=None, test_only=False):
     try:
         tf_list = ['H1', 'H4', 'D1']
         results = []
@@ -30,14 +30,13 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
                 continue
 
             df.name = f"{symbol}_{tf}"
-
-            # Fix: calculate EMAs and use last value for signal
             df["ema9"] = calculate_ema(df["close"], 9)
             df["ema21"] = calculate_ema(df["close"], 21)
             ema_signal = df["ema9"].iloc[-1] > df["ema21"].iloc[-1]
 
-            rsi_value = calculate_rsi(df['close'])
+            rsi_value = calculate_rsi(df["close"])
             patterns = detect_patterns(df)
+
             last_price = df["close"].iloc[-1]
             fib = get_fibonacci_levels(last_price)
             risk_zone = evaluate_risk_zone(last_price, fib)
@@ -67,10 +66,8 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
 
         buy_count = sum(1 for r in results if r["signal"] == "BUY")
         sell_count = sum(1 for r in results if r["signal"] == "SELL")
-
         final_signal = "BUY" if buy_count >= 2 else "SELL" if sell_count >= 2 else "WAIT"
         avg_score = sum(r["score"] for r in results) / len(results)
-
         confirmed = avg_score >= 4 and final_signal in ["BUY", "SELL"]
 
         return {
@@ -82,6 +79,5 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
         }
 
     except Exception as e:
-        logger.error(f"[analyze_symbol_multi_tf] Error for {symbol}: {e}")
+        logger.error(f"[generate_trade_decision] Error for {symbol}: {e}")
         return {"confirmed": False, "signal": "WAIT", "reason": str(e)}
-

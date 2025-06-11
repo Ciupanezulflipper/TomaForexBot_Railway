@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 import pandas as pd
 from marketdata import get_ohlc  # fallback if needed
-from analyzers import analyze_symbol_multi_tf
+from core.signal_fusion import analyze_symbol_multi_tf
 
 app = FastAPI()
 DATA = {}  # hold latest uploaded data per symbol

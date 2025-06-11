@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 from news_signal_logic import fetch_and_analyze_news
 from telegramsender import send_telegram_message
-from multi_frame_strategy import generate_trade_decision 
+from core.signal_fusion import generate_trade_decision 
 
 # --- CONFIG ---
 SYMBOLS = ["EURUSD", "USDJPY", "XAUUSD", "US30"]

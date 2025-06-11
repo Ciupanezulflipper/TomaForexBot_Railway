@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 
 from botstrategies import analyze_symbol_single
-from analyzers import analyze_symbol_multi_tf
+from core.signal_fusion import analyze_symbol_multi_tf
 from charting import generate_pro_chart_async
 from marketdata import get_ohlc
 from economic_calendar_module import fetch_major_events
