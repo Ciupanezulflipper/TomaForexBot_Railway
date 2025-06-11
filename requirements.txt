@@ -38,7 +38,6 @@ kiwisolver==1.4.8
 lxml==5.4.0
 MarkupSafe==3.0.2
 matplotlib==3.10.1
-MetaTrader5==5.0.4874
 mplfinance==0.12.10b0
 multidict==6.4.4
 multitasking==0.0.11
