@@ -38,7 +38,7 @@ bot = Bot(token=TELEGRAM_TOKEN)
 def score_bar(score):
     units = min(abs(score), 5)
     blocks = "█" * units
-@@ -121,51 +121,51 @@ async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not events:
             await update.message.reply_text("📅 No major economic events right now.")
             return
@@ -90,7 +90,7 @@ async def send_pattern_alerts():
                 if last_rsi is not None and last_rsi > MAX_RSI_SELL:
                     alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
 
-@@ -186,54 +186,75 @@ async def send_news_and_events():
+async def send_news_and_events():
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
 
         # Economic calendar
