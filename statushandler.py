@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from marketdata import get_yahoo_data
+from marketdata import get_yf_data
 from finnhub_data import get_finnhub_data
 
 import asyncio
@@ -18,7 +18,7 @@ async def connect_finnhub():
 async def connect_yahoo():
     """Async ping for Yahoo."""
     try:
-        df = await get_yahoo_data("AAPL", 5)
+        df = await get_yf_data("AAPL", "H1", 5)
         return not df.empty
     except Exception as e:
         print(f"Yahoo connect error: {e}")

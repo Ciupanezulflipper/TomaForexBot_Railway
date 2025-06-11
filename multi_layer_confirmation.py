@@ -50,11 +50,12 @@ def multi_layer_confirm(df, pattern=None, news_signal=None):
 
 # Example manual test
 if __name__ == "__main__":
-    from marketdata import get_mt5_data
+    import asyncio
+    from marketdata import get_yf_data
     from patterns import detect_candle_patterns
 
     symbol = "EURUSD"
-    df = get_mt5_data(symbol, "H1", bars=100)
+    df = asyncio.run(get_yf_data(symbol, "H1", bars=100))
     if df is not None and not df.empty:
         df = detect_candle_patterns(df)
         # Example test with fake news signal

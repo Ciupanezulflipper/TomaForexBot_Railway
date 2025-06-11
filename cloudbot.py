@@ -10,7 +10,7 @@ import pandas as pd
 from botstrategies import analyze_symbol_single
 from core.signal_fusion import generate_trade_decision
 from charting import generate_pro_chart_async
-from marketdata import get_ohlc, get_mt5_data
+from marketdata import get_ohlc
 from economic_calendar_module import fetch_major_events, fetch_all_calendar, analyze_events
 from statushandler import handle_status
 from news_fetcher import fetch_combined_news
@@ -143,7 +143,7 @@ async def send_pattern_alerts():
     
     for symbol in PAIRS:
         try:
-            df = get_mt5_data(symbol, TIMEFRAME, bars=100)
+             df = await get_ohlc(symbol, TIMEFRAME, bars=100)
             if df is None or df.empty:
                 logger.warning(f"[{symbol}] No data.")
                 continue
