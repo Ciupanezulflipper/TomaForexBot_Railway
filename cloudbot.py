@@ -68,24 +68,19 @@ async def send_pattern_alerts():
                 logger.warning(f"[{symbol}] No data.")
                 continue
 
-            df = detect_candle_patterns(df)
-            rsi = calculate_rsi(df["close"], 14)
-            df["RSI"] = rsi
-
-            last = df.iloc[-1]
-            last_pattern = last.get("Pattern", "")
-            last_rsi = last.get("RSI", None)
-            last_close = last.get("close", None)
+            patterns = detect_candle_patterns(df, max_patterns=3)
+            rsi_series = calculate_rsi(df["close"], 14)
+            latest_rsi = rsi_series.iloc[-1]
 
             alert = None
 
-            if any(p in last_pattern for p in ["Bullish Engulfing", "Hammer", "Morning Star"]):
-                if last_rsi is not None and last_rsi < MIN_RSI_BUY:
-                    alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
+            if any(p for p in patterns if "Bullish" in p):
+                if latest_rsi < MIN_RSI_BUY:
+                    alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
 
-            if any(p in last_pattern for p in ["Bearish Engulfing", "Shooting Star", "Evening Star"]):
-                if last_rsi is not None and last_rsi > MAX_RSI_SELL:
-                    alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
+            elif any(p for p in patterns if "Bearish" in p):
+                if latest_rsi > MAX_RSI_SELL:
+                    alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
 
             if alert:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
