@@ -12,6 +12,7 @@ from economic_calendar_module import fetch_major_events
 from statushandler import handle_status
 from news_fetcher import fetch_combined_news
 from news_signal_logic import analyze_multiple_headlines
+from core.signal_fusion import run_fused_analysis
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
