@@ -38,8 +38,9 @@ async def analyze_symbol_multi_tf(symbol, chat_id=None, test_only=False):
 
             rsi_value = calculate_rsi(df['close'])
             patterns = detect_patterns(df)
-            fib = get_fibonacci_levels(df)
-            risk_zone = evaluate_risk_zone(df)
+            last_price = df["close"].iloc[-1]
+            fib = get_fibonacci_levels(last_price)
+            risk_zone = evaluate_risk_zone(last_price, fib)
 
             pattern_score = len(patterns)
             ema_score = 1 if ema_signal else 0

@@ -6,10 +6,16 @@ from datetime import datetime
 
 API_KEY = os.getenv("FINNHUB_API_KEY")
 
+if not API_KEY:
+    print("[⚠️] FINNHUB_API_KEY not set — skipping Finnhub requests.")
+
 async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
     """
     Fetch OHLC data from Finnhub for Forex or indices.
     """
+    if not API_KEY:
+        return pd.DataFrame()
+
     base_url = "https://finnhub.io/api/v1/forex/candle"
 
     symbol_map = {
@@ -61,15 +67,14 @@ async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
             "volume": data["v"]
         }).set_index("time")
 
-        # Rename to match capitalized style in rest of project
-        df.rename(columns={
-            "open": "open", "high": "high",
-            "low": "low", "close": "close",
-            "volume": "volume"
-        }, inplace=True)
-
         return df
 
     except Exception as e:
         print(f"❌ Finnhub error: {e}")
         return pd.DataFrame()
+
+
+def score_bar(score):
+    units = min(abs(score), 5)
+    blocks = "█" * units
+    return f"{blocks}{'🔺' if score > 0 else '🔻'}" if score != 0 else "—"
