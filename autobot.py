@@ -1,5 +1,5 @@
 
-from marketdata import connect, get_ohlc
+from marketdata import get_ohlc
 import asyncio
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
@@ -42,11 +42,7 @@ def analyze_and_alert(symbol, tf="H1", bars=50, pattern_threshold=2):
 
 # 🚀 Run all three symbols
 def run_all():
-    if not connect():
-         print("❌ Data source connection failed.")
-        return
-
-    analyze_and_alert("XAUUSD")
+        analyze_and_alert("XAUUSD")
     analyze_and_alert("XAGUSD")
     analyze_and_alert("EURUSD")
 
