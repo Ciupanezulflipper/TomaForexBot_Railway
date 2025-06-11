@@ -2,6 +2,8 @@
 
 This bot scans the market using technical indicators, news events, and sentiment signals, then alerts you via Telegram.
 
+---
+
 ## 🧠 Features
 
 - Modular file structure
@@ -16,7 +18,9 @@ This bot scans the market using technical indicators, news events, and sentiment
 
 ## 🚀 Getting Started
 
-1. **Clone the repo**
+1. **Clone the repo and install dependencies**
+
 ```bash
-git clone https://github.com/yourname/TomaForexBot.git
+git clone https://github.com/YourUsername/TomaForexBot.git
 cd TomaForexBot
+pip install -r requirements.txt

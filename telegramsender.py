@@ -1,7 +1,7 @@
 # telegramsender.py
 
 import os
-from telegram import Bot, InputFile
+from telegram import Bot
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,7 +16,7 @@ async def send_telegram_message(message, chat_id):
     await bot.send_message(chat_id=chat_id, text=message, parse_mode='HTML')
 
 # Send an image/photo (async)
-async def send_telegram_photo(image_path, chat_id, caption=None):
+async def send_telegram_photo(chat_id, photo_path, caption=None):
     bot = Bot(token=TELEGRAM_TOKEN)
-    with open(image_path, "rb") as img:
-        await bot.send_photo(chat_id=chat_id, photo=InputFile(img), caption=caption)
+    with open(photo_path, 'rb') as photo:
+        await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption)

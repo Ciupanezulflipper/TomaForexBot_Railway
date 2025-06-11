@@ -1,68 +1,70 @@
-import os
-import asyncio
-from dotenv import load_dotenv
+# news_signal_logic.py
 
-# --- CONFIG ---
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+import re
+from news_fetcher import fetch_combined_news
 
-# Import or define your async Telegram sender
-from telegram import Bot
+# Simple scoring dictionary — expand this based on your use case
+NEWS_KEYWORDS = {
+    "interest rate hike": -1,
+    "rate hike": -1,
+    "inflation rising": -1,
+    "tariff delay": +1,
+    "stimulus package": +1,
+    "strong gdp": +1,
+    "bank failure": -1,
+    "unemployment high": -1,
+    "central bank support": +1,
+    "usd weakness": +1,
+    "usd strength": -1
+}
 
-bot = Bot(token=TELEGRAM_TOKEN)
+def clean_text(text):
+    return re.sub(r'[^\w\s]', '', text.lower())
 
-async def send_telegram_message(message, chat_id=TELEGRAM_CHAT_ID):
-    try:
-        await bot.send_message(chat_id=chat_id, text=message)
-    except Exception as e:
-        print(f"[ERROR] Failed to send Telegram message: {e}")
+def analyze_news_headline(headline, symbol="EURUSD"):
+    """
+    Returns a dict with score and reasons for one headline.
+    """
+    score = 0
+    reasons = []
+    text = clean_text(headline)
 
-# --- News Analysis Logic Example ---
+    for keyword, impact in NEWS_KEYWORDS.items():
+        if keyword in text:
+            score += impact
+            reasons.append(f"{'🔺' if impact > 0 else '🔻'} {keyword}")
 
-def analyze_news_headline(headline):
-    # Very basic logic for the demo. You can expand!
-    signals = []
+    result = {
+        "symbol": symbol,
+        "score": score,
+        "reasons": reasons
+    }
+    return result
 
-    headline_lower = headline.lower()
+def analyze_multiple_headlines(headlines, symbol="EURUSD"):
+    """
+    Takes a list of headlines and returns cumulative score + reasons.
+    """
+    total_score = 0
+    all_reasons = []
 
-    if "tariff" in headline_lower and "delay" in headline_lower:
-        signals.append({
-            "pair": "US30",
-            "signal": "BUY",
-            "reason": "Tariff delay is positive for stocks"
-        })
-        signals.append({
-            "pair": "EURUSD",
-            "signal": "BUY",
-            "reason": "USD weakness expected"
-        })
-        signals.append({
-            "pair": "USDJPY",
-            "signal": "HOLD",
-            "reason": "No direct impact"
-        })
-    # Add more rules here as needed
+    for headline in headlines:
+        res = analyze_news_headline(headline, symbol)
+        total_score += res["score"]
+        all_reasons.extend(res["reasons"])
 
-    return signals
+    return {
+        "symbol": symbol,
+        "score": total_score,
+        "reasons": all_reasons
+    }
 
-async def handle_news_and_alert(headline, chat_id=TELEGRAM_CHAT_ID):
-    signals = analyze_news_headline(headline)
-    if not signals:
-        msg = f"Headline: {headline}\nNo trading signals detected."
-        print(msg)
-        await send_telegram_message(msg, chat_id)
-        return
-
-    msg_lines = [f"Headline: {headline}"]
-    for sig in signals:
-        msg_lines.append(f"- {sig['pair']}: {sig['signal']} ({sig['reason']})")
-    msg = "\n".join(msg_lines)
-    print(msg)
-    await send_telegram_message(msg, chat_id)
-
-# Manual test
-if __name__ == "__main__":
-    test_headline = "Trump delays tariffs on Europe until July 9."
-    asyncio.run(handle_news_and_alert(test_headline, chat_id=TELEGRAM_CHAT_ID))
-    print("Manual test completed.")
+async def fetch_and_analyze_news():
+    """Fetch headlines from multiple sources and analyze them."""
+    headlines = await fetch_combined_news()
+    results = []
+    for h in headlines:
+        sigs = analyze_news_headline(h)
+        if sigs:
+            results.append((h, sigs))
+    return results

@@ -1,5 +1,4 @@
-print("🧪 botstrategies.py loaded from", __file__)
-
+import os
 import asyncio
 import pandas as pd
 from indicators import calculate_ema, calculate_rsi
@@ -8,7 +7,9 @@ from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
 from marketdata import get_ohlc
-from telegramsender import send_telegram_message, send_tfelegram_photo
+from telegramsender import send_telegram_message, send_telegram_photo
+
+print("🧪 botstrategies.py loaded from", __file__)
 
 async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
     if df is None or df.empty:
@@ -36,9 +37,14 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         ema21 = float(ema21) if pd.notnull(ema21) else 0.0
         rsi = float(rsi_val) if pd.notnull(rsi_val) and not isinstance(rsi_val, pd.Series) else 0.0
 
+        # Fix: Pass correct float to Fibonacci + risk analysis
+        last_price = float(df["close"].iloc[-1])
+        fib = calculate_fibonacci_levels(last_price)
+        risk_zone = match_fibonacci_price(last_price, fib)
+
         signal = "BUY" if ema9 > ema21 else "SELL"
         emoji = "📈" if signal == "BUY" else "📉"
-        reasons = [pattern]
+        reasons = [pattern, f"risk: {risk_zone}"]
         score = 1  # Placeholder for your real scoring logic
 
         signal_data = {
@@ -65,9 +71,9 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
                 f"rsi: {rsi:.2f} | ema9: {ema9:.4f} | ema21: {ema21:.4f}\n"
                 f"Reasons: {'; '.join(reasons)}"
             )
-            await send_telegram_message(msg)
+            await send_telegram_message(msg, chat_id)
             if chart_path:
-                await send_tfelegram_photo(chart_path)
+                await send_telegram_photo(chat_id, chart_path)
 
         log_to_csv(signal_data)
         return [signal_data]
