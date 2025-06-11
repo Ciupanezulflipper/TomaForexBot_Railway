@@ -5,19 +5,9 @@ from marketdata import get_ohlc
 from fibonacci import get_fibonacci_levels
 from weights_config import get_weights
 from riskanalysis import evaluate_risk_zone
+from core.signal_utils import calculate_signal_score
 
 logger = logging.getLogger(__name__)
-
-def calculate_signal_score(rsi_score, pattern_score, ema_score, fib_score, risk_score):
-    weights = get_weights()
-    total = (
-        weights['rsi'] * rsi_score +
-        weights['pattern'] * pattern_score +
-        weights['ema'] * ema_score +
-        weights['fibonacci'] * fib_score +
-        weights['risk'] * risk_score
-    )
-    return total
 
 async def generate_trade_decision(symbol, chat_id=None, test_only=False):
     try:

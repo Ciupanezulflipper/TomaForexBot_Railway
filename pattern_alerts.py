@@ -1,11 +1,11 @@
-# pattern_alerts.py
 import os
+import asyncio
 import pandas as pd
 from dotenv import load_dotenv
 from telegram import Bot
-from marketdata import get_mt5_data
 from indicators import calculate_rsi
 from patterns import detect_patterns
+from marketdata import get_ohlc  # Use this instead of MT5
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -18,9 +18,10 @@ MAX_RSI_SELL = 65
 
 bot = Bot(token=TELEGRAM_TOKEN)
 
-def analyze_and_alert():
+async def analyze_and_alert():
     for symbol in MONITOR_PAIRS:
-        df = get_mt5_data(symbol, TIMEFRAME, bars=100)
+        df = await get_ohlc(symbol, TIMEFRAME, bars=100)
+
         if df is None or df.empty:
             print(f"[{symbol}] No data.")
             continue
@@ -33,7 +34,6 @@ def analyze_and_alert():
             'close': 'Close',
             'volume': 'Volume'
         })
-        # -------------------------------------------------
 
         patterns = detect_patterns(df)
         last_pattern = ""
@@ -76,4 +76,4 @@ def analyze_and_alert():
 
 if __name__ == "__main__":
     print("[PATTERN ALERTS] Checking for multi-confirmation...")
-    analyze_and_alert()
+    asyncio.run(analyze_and_alert())
