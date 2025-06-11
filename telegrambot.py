@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 
 from botstrategies import analyze_symbol_single
-from core.signal_fusion import analyze_symbol_multi_tf
+from core.signal_fusion import generate_trade_decision
 from charting import generate_pro_chart_async
 from marketdata import get_ohlc
 from economic_calendar_module import fetch_major_events
@@ -46,7 +46,7 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     symbol = context.args[0].upper()
     try:
-        result = await analyze_symbol_multi_tf(symbol, update.effective_chat.id)
+        result = await generate_trade_decision(symbol, update.effective_chat.id)
         if not result.get("confirmed"):
             await update.message.reply_text(f"⚠️ No strong signal for {symbol}.\nReason: {result.get('reason')}")
         else:

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 import pandas as pd
 from marketdata import get_ohlc  # fallback if needed
-from core.signal_fusion import analyze_symbol_multi_tf
+from core.signal_fusion import generate_trade_decision
 
 app = FastAPI()
 DATA = {}  # hold latest uploaded data per symbol
@@ -20,7 +20,7 @@ async def receive_data(request: Request):
     df.set_index("datetime", inplace=True)
     
     # analyze it
-    results = await analyze_symbol_multi_tf(df, symbol)
+    results = await generate_trade_decision(symbol)
     DATA[symbol] = results
 
     return {"status": "success", "symbol": symbol, "result": results}
