@@ -12,7 +12,7 @@ from core.signal_fusion import generate_trade_decision
 from charting import generate_pro_chart_async
 from marketdata import get_ohlc
 from economic_calendar_module import fetch_major_events, fetch_all_calendar, analyze_events
-from statushandler import handle_status
+from statushandler import handle_status, connect_finnhub, connect_yahoo
 from news_fetcher import fetch_combined_news
 from news_signal_logic import analyze_multiple_headlines
 from news_feeds import analyze_all_feeds
@@ -38,86 +38,7 @@ bot = Bot(token=TELEGRAM_TOKEN)
 def score_bar(score):
     units = min(abs(score), 5)
     blocks = "█" * units
-    return f"{blocks}{'🔺' if score > 0 else '🔻'}" if score != 0 else "—"
-
-# ══════════════════ COMMAND HANDLERS ══════════════════
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 TomaForexBot is online! Use:\n"
-        "/analyze EURUSD - Technical analysis\n"
-        "/chart EURUSD H1 - Generate chart\n"
-        "/news EURUSD - News sentiment\n"
-        "/calendar - Economic events\n"
-        "/status - Bot status"
-    )
-
-async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("⚠️ Usage: /analyze SYMBOL")
-        return
-
-    symbol = context.args[0].upper()
-    try:
-        result = await generate_trade_decision(symbol, update.effective_chat.id)
-        if not result.get("confirmed"):
-            await update.message.reply_text(f"⚠️ No strong signal for {symbol}.\nReason: {result.get('reason')}")
-        else:
-            await update.message.reply_text(
-                f"✅ Signal for {symbol}: {result.get('signal')} ({result.get('avg_score'):.2f})\n"
-                f"{result.get('reason')}"
-            )
-    except Exception as e:
-        logger.error(f"Analyze error: {e}")
-        await update.message.reply_text(f"❌ Error analyzing {symbol}: {e}")
-
-async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) < 2:
-        await update.message.reply_text("⚠️ Usage: /chart SYMBOL TIMEFRAME (e.g., /chart EURUSD H1)")
-        return
-
-    symbol = context.args[0].upper()
-    tf = context.args[1].upper()
-
-    try:
-        df = await get_ohlc(symbol, tf)
-        if df is None or df.empty:
-            await update.message.reply_text("❌ No data for that symbol/timeframe.")
-            return
-
-        chart_path = await generate_pro_chart_async(df, symbol, tf)
-        with open(chart_path, 'rb') as img:
-            await update.message.reply_photo(photo=img)
-
-    except Exception as e:
-        logger.error(f"Chart error: {e}")
-        await update.message.reply_text(f"❌ Chart generation failed: {e}")
-
-async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    symbol = context.args[0].upper() if context.args else None
-    if not symbol:
-        await update.message.reply_text("⚠️ Usage: /news SYMBOL (e.g., /news USDJPY)")
-        return
-
-    try:
-        headlines = await fetch_combined_news()
-        result = analyze_multiple_headlines(headlines, symbol)
-        if result["score"] == 0:
-            await update.message.reply_text(f"📰 No strong news signal for {symbol}")
-        else:
-            msg = (
-                f"📊 News Signal for {symbol}\n"
-                f"Score: {result['score']} {score_bar(result['score'])}\n"
-                f"Reasons:\n" + "\n".join(result['reasons'])
-            )
-            await update.message.reply_text(msg)
-    except Exception as e:
-        logger.error(f"News command error: {e}")
-        await update.message.reply_text(f"❌ Error fetching news: {e}")
-
-async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        events = fetch_major_events()
+@@ -121,51 +121,51 @@ async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not events:
             await update.message.reply_text("📅 No major economic events right now.")
             return
@@ -143,7 +64,7 @@ async def send_pattern_alerts():
     
     for symbol in PAIRS:
         try:
-             df = await get_ohlc(symbol, TIMEFRAME, bars=100)
+            df = await get_ohlc(symbol, TIMEFRAME, bars=100)
             if df is None or df.empty:
                 logger.warning(f"[{symbol}] No data.")
                 continue
@@ -169,20 +90,7 @@ async def send_pattern_alerts():
                 if last_rsi is not None and last_rsi > MAX_RSI_SELL:
                     alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {last_pattern}\nRSI: {last_rsi:.2f}\nClose: {last_close}"
 
-            if alert:
-                await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
-                logger.info(f"[ALERT SENT] {symbol} - {last_pattern}")
-
-        except Exception as e:
-            logger.error(f"[PATTERN ALERT ERROR] {symbol}: {e}")
-
-async def send_news_and_events():
-    """Send news and economic calendar alerts"""
-    try:
-        # News signals
-        logic_alerts, events = analyze_all_feeds()
-        for alert in logic_alerts[:5]:  # Limit to top 5
-            msg = f"📰 {alert['headline'][:100]}...\n=> {alert['asset']} {alert['signal']}\nReason: {alert['reason']}"
+@@ -186,54 +186,75 @@ async def send_news_and_events():
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
 
         # Economic calendar
@@ -208,10 +116,31 @@ async def background_alerts():
         # Wait 15 minutes before next alert cycle
         await asyncio.sleep(60 * 15)
 
+# ══════════════════ CONNECTION CHECK ══════════════════
+
+async def check_connections() -> bool:
+    """Verify data source connectivity before starting the bot."""
+    finnhub_ok, yahoo_ok = await asyncio.gather(
+        connect_finnhub(), connect_yahoo()
+    )
+    if not (finnhub_ok or yahoo_ok):
+        logger.error("❌ Both Finnhub and Yahoo connections failed.")
+        return False
+
+    if not finnhub_ok:
+        logger.warning("⚠️ Finnhub connection failed; using Yahoo only")
+    if not yahoo_ok:
+        logger.warning("⚠️ Yahoo connection failed; using Finnhub only")
+
+    return True
+
 # ══════════════════ MAIN BOT RUNNER ══════════════════
 
 async def run_bot():
     """Main function that runs both command handling and background alerts"""
+    if not await check_connections():
+        return
+
     # Create the application
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
@@ -237,24 +166,3 @@ async def run_bot():
         await asyncio.gather(
             app.updater.start_polling(),
             alert_task
-        )
-
-if __name__ == "__main__":
-    logger.info("🚀 Starting TomaForexBot (Railway deployment)")
-    
-    # Check environment variables
-    if not TELEGRAM_TOKEN:
-        logger.error("❌ TELEGRAM_TOKEN not found in environment")
-        exit(1)
-    
-    if not TELEGRAM_CHAT_ID:
-        logger.warning("⚠️ TELEGRAM_CHAT_ID not set")
-    
-    # Run the bot
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot stopped by user")
-    except Exception as e:
-        logger.error(f"❌ Bot crashed: {e}")
-        exit(1)

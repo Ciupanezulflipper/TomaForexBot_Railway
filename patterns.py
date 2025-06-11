@@ -1,4 +1,3 @@
-# patterns.py
 import pandas as pd
 
 def detect_bullish_engulfing(df):
@@ -46,9 +45,9 @@ def detect_patterns(df):
     results['pin_bar'] = detect_pin_bar(df)
     return results
 
-def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
-    """Add a 'pattern' column with simple candle pattern detection."""
-    patterns = []
+def detect_candle_patterns(df: pd.DataFrame, max_patterns: int = 3) -> list:
+    """Return the last ``max_patterns`` detected candle pattern labels."""
+    labels: list[str] = []
     for i in range(len(df)):
         sub = df.iloc[: i + 1]
         label = None
@@ -60,8 +59,8 @@ def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
             pin = detect_pin_bar(sub)
             if pin:
                 label = f"{pin} pin bar"
-        patterns.append(label or "None")
+        labels.append(label or "None")
 
-    df = df.copy()
-    df["pattern"] = patterns
-    return df
+    if max_patterns > 0:
+        return labels[-max_patterns:]
+    return labels

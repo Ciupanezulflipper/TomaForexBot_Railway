@@ -4,7 +4,7 @@ import asyncio
 from indicators import calculate_ema, calculate_rsi
 from patterns import detect_candle_patterns
 from alertfilter import is_strong_signal
-from telegrambot import send_telegram_message
+from core.utils import send_telegram_message
 from datetime import datetime
 import time
 
@@ -20,7 +20,7 @@ def analyze_and_alert(symbol, tf="H1", bars=50, pattern_threshold=2):
     df['ema21'] = calculate_ema(df['close'], period=21)
     df['rsi'] = calculate_rsi(df['close'], period=14)
 
-    patterns = detect_candle_patterns(df.tail(pattern_threshold), threshold=pattern_threshold)
+    patterns = detect_candle_patterns(df.tail(pattern_threshold), max_patterns=pattern_threshold)
     last_rsi = df.iloc[-1]['rsi']
 
     if not is_strong_signal(patterns, last_rsi):
@@ -42,11 +42,14 @@ def analyze_and_alert(symbol, tf="H1", bars=50, pattern_threshold=2):
 
 # 🚀 Run all three symbols
 def run_all():
-        analyze_and_alert("XAUUSD")
+    print("🔗 Skipping connect() — using cloud data sources.")
+
+    analyze_and_alert("XAUUSD")
     analyze_and_alert("XAGUSD")
     analyze_and_alert("EURUSD")
 
-     # disconnect()  # disconnect not implemented in async version
+
+      # disconnect()  # disconnect not implemented in async version
 
 # 🕒 Optional loop every hour (disabled by default)
 # while True:
