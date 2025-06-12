@@ -165,8 +165,11 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"[MAIN ERROR] {e}")
 
+# ────────────── Fix: connect_finnhub() properly defined outside ──────────────
+async def connect_finnhub() -> bool:
     key = os.getenv("FINNHUB_API_KEY")
     if not key:
+        print("Missing key")
         return False
     try:
         async with aiohttp.ClientSession() as session:
