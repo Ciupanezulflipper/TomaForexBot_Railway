@@ -20,7 +20,8 @@ def analyze_and_alert(symbol, tf="H1", bars=50, pattern_threshold=2):
     df['ema21'] = calculate_ema(df['close'], period=21)
     df['rsi'] = calculate_rsi(df['close'], period=14)
 
-    patterns = detect_candle_patterns(df.tail(pattern_threshold), max_patterns=pattern_threshold)
+    df = detect_candle_patterns(df)
+    patterns = df.tail(pattern_threshold)["Pattern"].tolist()
     last_rsi = df.iloc[-1]['rsi']
 
     if not is_strong_signal(patterns, last_rsi):
