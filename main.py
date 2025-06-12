@@ -23,7 +23,7 @@ async def run_analysis_loop():
             logger.info("🔄 Running scheduled analysis...")
             for symbol in symbols:
                 try:
-                    df = await get_ohlc(symbol, "H1", bars=200)
+                     df = await get_ohlc(symbol, "H1", bars=200)
                     if df is not None and not df.empty:
                         await analyze_symbol(df, symbol, "H1")
                         logger.info(f"✅ Finished analysis for {symbol}")
