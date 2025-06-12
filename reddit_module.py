@@ -4,9 +4,9 @@ import logging
 from datetime import datetime, timezone
 
 # ---- CONFIG: Fill in your Reddit API details ----
-REDDIT_CLIENT_ID=lIRvK760FWnMY3qPYPBaww
-REDDIT_CLIENT_SECRET=J5bKYKVwdzPF9FywnuY38dMLFUl_cw
-REDDIT_USER_AGENT=TomaNewsBot/1.0 by u/CriticismVisual130
+REDDIT_CLIENT_ID = "lIRvK760FWnMY3qPYPBaww"
+REDDIT_CLIENT_SECRET = "J5bKYKVwdzPF9FywnuY38dMLFUl_cw"
+REDDIT_USER_AGENT = "TomaNewsBot/1.0 by u/CriticismVisual130"
 
 # Optional: Add specific subreddits to target
 SUBREDDITS = [

@@ -38,16 +38,9 @@ def detect_pin_bar(df, threshold=0.66):
         return 'bearish'
     return False
 
-def detect_patterns(df):
-    results = {}
-    results['bullish_engulfing'] = detect_bullish_engulfing(df)
-    results['bearish_engulfing'] = detect_bearish_engulfing(df)
-    results['pin_bar'] = detect_pin_bar(df)
-    return results
-
-def detect_candle_patterns(df: pd.DataFrame, max_patterns: int = 3) -> list:
-    """Return the last ``max_patterns`` detected candle pattern labels."""
-    labels: list[str] = []
+def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    """Attach a 'Pattern' column to the DataFrame with candle pattern labels."""
+    labels = []
     for i in range(len(df)):
         sub = df.iloc[: i + 1]
         label = None
@@ -61,6 +54,6 @@ def detect_candle_patterns(df: pd.DataFrame, max_patterns: int = 3) -> list:
                 label = f"{pin} pin bar"
         labels.append(label or "None")
 
-    if max_patterns > 0:
-        return labels[-max_patterns:]
-    return labels
+    df = df.copy()
+    df["Pattern"] = labels
+    return df

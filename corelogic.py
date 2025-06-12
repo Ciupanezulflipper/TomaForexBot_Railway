@@ -9,8 +9,7 @@ def analyze_symbol(symbol, df):
     df["ema21"] = calculate_ema(df["close"], period=21)
     df["rsi"] = calculate_rsi(df["close"], period=14)
 
-    patterns = detect_candle_patterns(df)
-    df = pd.concat([df, patterns], axis=1)
+    df = detect_candle_patterns(df)
 
     # ✅ clean float values
     high_val = float(df["high"].values[-200:].max())

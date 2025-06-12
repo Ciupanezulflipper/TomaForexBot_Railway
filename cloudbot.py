@@ -1,3 +1,4 @@
+import aiohttp
 import os
 import logging
 import asyncio
@@ -70,7 +71,8 @@ async def send_pattern_alerts():
 
             patterns = detect_candle_patterns(df, max_patterns=3)
             rsi_series = calculate_rsi(df["close"], 14)
-            latest_rsi = rsi_series.iloc[-1]
+            latest_rsi = rsi_series.iloc[-1] if isinstance(rsi_series, pd.Series) else rsi_series
+
 
             alert = None
 
@@ -162,3 +164,16 @@ if __name__ == "__main__":
         asyncio.run(run_bot())
     except Exception as e:
         logger.error(f"[MAIN ERROR] {e}")
+
+    key = os.getenv("FINNHUB_API_KEY")
+    if not key:
+        return False
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://finnhub.io/api/v1/quote?symbol=AAPL&token={key}") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return "c" in data  # current price field
+    except Exception as e:
+        print(f"[ERROR] Finnhub ping failed: {e}")
+    return False

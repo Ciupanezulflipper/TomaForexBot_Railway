@@ -143,5 +143,26 @@ class SignalFormatter:
     
     @staticmethod
     def format_for_log(result: Dict, symbol: str) -> str:
-        """
-        Format signal
+        """Format signal result for plain text logs."""
+        try:
+            signal = result.get('signal', 'ERROR')
+            score = result.get('avg_score', 0)
+            strength = result.get('strength', 0)
+            confirmed = result.get('confirmed', False)
+            reason = result.get('reason', '')
+
+            clean_reason = reason.replace('\n', ' ').replace('|', ';')
+            if len(clean_reason) > 200:
+                clean_reason = clean_reason[:200] + '...'
+
+            status = 'YES' if confirmed else 'NO'
+            timestamp = datetime.utcnow().isoformat()
+
+            return (
+                f"{timestamp} {symbol} {signal} "
+                f"score={score:.2f} strength={strength}% "
+                f"confirmed={status} reason={clean_reason}"
+            )
+        except Exception as e:
+            logger.error(f"Error formatting signal for log: {e}")
+            return f"Error logging signal for {symbol}"
