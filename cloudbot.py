@@ -1,4 +1,4 @@
-import aiohttp
+mport aiohttp
 import os
 import logging
 import asyncio
@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update, Bot
 import pandas as pd
+from typing import List
 
 # Import your existing modules
 from botstrategies import analyze_symbol_single
@@ -18,6 +19,7 @@ from news_fetcher import fetch_combined_news
 from news_signal_logic import analyze_multiple_headlines
 from news_feeds import analyze_all_feeds
 from patterns import detect_candle_patterns
+from patterns import detect_candle_patterns, PatternDetector, PatternResult
 from indicators import calculate_rsi
 
 # Load environment
@@ -61,6 +63,17 @@ async def send_pattern_alerts():
     TIMEFRAME = "H1"
     MIN_RSI_BUY = 35
     MAX_RSI_SELL = 65
+    """Detect candle patterns and send alerts for configured pairs."""
+    try:
+        pairs = [
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "AUDUSD",
+            "USDCAD",
+            "USDCHF",
+            "NZDUSD",
+        ]
 
     for symbol in PAIRS:
         try:
@@ -68,27 +81,99 @@ async def send_pattern_alerts():
             if df is None or df.empty:
                 logger.warning(f"[{symbol}] No data.")
                 continue
+        alerts_sent = 0
 
             patterns = detect_candle_patterns(df, max_patterns=3)
             rsi_series = calculate_rsi(df["close"], 14)
             latest_rsi = rsi_series.iloc[-1] if isinstance(rsi_series, pd.Series) else rsi_series
+        for pair in pairs:
+            try:
+                df = await get_ohlc(pair, "H1", bars=100)
 
+                if df is None or df.empty:
+                    logger.warning(f"No data available for {pair}")
+                    continue
 
             alert = None
+                pattern_df = detect_candle_patterns(df)
+                recent = PatternDetector.get_recent_patterns(pattern_df, lookback_periods=3)
 
             if any(p for p in patterns if "Bullish" in p):
                 if latest_rsi < MIN_RSI_BUY:
                     alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
+                if recent:
+                    await send_pair_pattern_alert(pair, recent, df)
+                    alerts_sent += 1
+                    await asyncio.sleep(0.5)
 
             elif any(p for p in patterns if "Bearish" in p):
                 if latest_rsi > MAX_RSI_SELL:
                     alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
+            except Exception as inner_exc:
+                logger.error(f"[Pattern Alert] {pair}: {inner_exc}")
 
             if alert:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
+        logger.info(f"✅ Pattern alerts processed for {alerts_sent} pairs")
 
         except Exception as e:
             logger.error(f"[Pattern Alert] {symbol}: {e}")
+    except Exception as exc:
+        logger.error(f"Error in send_pattern_alerts: {exc}")
+
+
+async def send_pair_pattern_alert(pair: str, patterns: List[PatternResult], df: pd.DataFrame):
+    """Send a formatted alert message for a single trading pair."""
+    try:
+        current_price = df["close"].iloc[-1]
+        price_change = ((df["close"].iloc[-1] / df["close"].iloc[-2]) - 1) * 100
+
+        pattern_texts = []
+        for pattern in patterns:
+            direction_emoji = "🟢" if pattern.bullish else "🔴"
+            direction_text = "Bullish" if pattern.bullish else "Bearish"
+            strength_emoji = get_strength_emoji(pattern.strength)
+            pattern_texts.append(f"{direction_emoji} {direction_text} {pattern.name} {strength_emoji}")
+
+        alert_message = f"""
+🔍 **Pattern Alert: {pair}**
+
+📊 **Current Price:** {current_price:.5f}
+📈 **Change:** {price_change:+.2f}%
+
+🕯️ **Detected Patterns:**
+{chr(10).join(f"• {p}" for p in pattern_texts)}
+
+⏰ **Time:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')}
+
+#PatternAlert #{pair} #TechnicalAnalysis
+""".strip()
+
+        await send_to_all_channels(alert_message)
+        logger.info(f"📊 Pattern alert sent for {pair}: {len(patterns)} patterns detected")
+
+    except Exception as exc:
+        logger.error(f"Error sending pattern alert for {pair}: {exc}")
+
+
+def get_strength_emoji(strength: str) -> str:
+    """Return an emoji representing the given strength label."""
+    strength_lower = strength.lower()
+    if strength_lower == "strong":
+        return "🔥"
+    if strength_lower == "medium":
+        return "⚡"
+    if strength_lower == "weak":
+        return "💫"
+    return "📊"
+
+
+async def send_to_all_channels(message: str):
+    """Send a message to all configured notification channels."""
+    try:
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    except Exception as exc:
+        logger.error(f"Error sending to channels: {exc}")
 
 
 # ────────────── News + Calendar Alerts ──────────────
@@ -114,69 +199,3 @@ async def background_alerts():
     while True:
         try:
             await send_pattern_alerts()
-            await send_news_and_events()
-            logger.info("✅ Alerts sent")
-        except Exception as e:
-            logger.error(f"[Background Loop] {e}")
-        await asyncio.sleep(60 * 15)
-
-
-# ────────────── Connection Check ──────────────
-async def check_connections() -> bool:
-    finnhub_ok, yahoo_ok = await asyncio.gather(
-        connect_finnhub(), connect_yahoo()
-    )
-    if not (finnhub_ok or yahoo_ok):
-        logger.error("❌ Both Finnhub and Yahoo connections failed.")
-        return False
-    if not finnhub_ok:
-        logger.warning("⚠️ Finnhub failed")
-    if not yahoo_ok:
-        logger.warning("⚠️ Yahoo failed")
-    return True
-
-
-# ────────────── Main Runner ──────────────
-async def run_bot():
-    if not await check_connections():
-        return
-
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    # Add command handlers (add more as needed)
-    app.add_handler(CommandHandler("status", handle_status))
-    app.add_handler(CommandHandler("calendar", calendar_command))
-
-    logger.info("🤖 TomaForexBot started")
-
-    # Start background alerts
-    alert_task = asyncio.create_task(background_alerts())
-
-    async with app:
-        await app.start()
-        logger.info("🔄 Polling started")
-        await asyncio.gather(app.updater.start_polling(), alert_task)
-
-
-# ────────────── Entry Point ──────────────
-if __name__ == "__main__":
-    try:
-        asyncio.run(run_bot())
-    except Exception as e:
-        logger.error(f"[MAIN ERROR] {e}")
-
-# ────────────── Fix: connect_finnhub() properly defined outside ──────────────
-async def connect_finnhub() -> bool:
-    key = os.getenv("FINNHUB_API_KEY")
-    if not key:
-        print("Missing key")
-        return False
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://finnhub.io/api/v1/quote?symbol=AAPL&token={key}") as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return "c" in data  # current price field
-    except Exception as e:
-        print(f"[ERROR] Finnhub ping failed: {e}")
-    return False
