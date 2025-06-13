@@ -63,17 +63,6 @@ async def send_pattern_alerts():
     TIMEFRAME = "H1"
     MIN_RSI_BUY = 35
     MAX_RSI_SELL = 65
-    """Detect candle patterns and send alerts for configured pairs."""
-    try:
-        pairs = [
-            "EURUSD",
-            "GBPUSD",
-            "USDJPY",
-            "AUDUSD",
-            "USDCAD",
-            "USDCHF",
-            "NZDUSD",
-        ]
 
     for symbol in PAIRS:
         try:
@@ -81,40 +70,23 @@ async def send_pattern_alerts():
             if df is None or df.empty:
                 logger.warning(f"[{symbol}] No data.")
                 continue
-        alerts_sent = 0
 
             patterns = detect_candle_patterns(df, max_patterns=3)
             rsi_series = calculate_rsi(df["close"], 14)
             latest_rsi = rsi_series.iloc[-1] if isinstance(rsi_series, pd.Series) else rsi_series
-        for pair in pairs:
-            try:
-                df = await get_ohlc(pair, "H1", bars=100)
-
-                if df is None or df.empty:
-                    logger.warning(f"No data available for {pair}")
-                    continue
 
             alert = None
-                pattern_df = detect_candle_patterns(df)
-                recent = PatternDetector.get_recent_patterns(pattern_df, lookback_periods=3)
 
             if any(p for p in patterns if "Bullish" in p):
                 if latest_rsi < MIN_RSI_BUY:
                     alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
-                if recent:
-                    await send_pair_pattern_alert(pair, recent, df)
-                    alerts_sent += 1
-                    await asyncio.sleep(0.5)
 
             elif any(p for p in patterns if "Bearish" in p):
                 if latest_rsi > MAX_RSI_SELL:
                     alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
-            except Exception as inner_exc:
-                logger.error(f"[Pattern Alert] {pair}: {inner_exc}")
 
             if alert:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
-        logger.info(f"✅ Pattern alerts processed for {alerts_sent} pairs")
 
         except Exception as e:
             logger.error(f"[Pattern Alert] {symbol}: {e}")
