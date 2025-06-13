@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import talib
 import logging
 from typing import List
 from dataclasses import dataclass
@@ -9,119 +8,110 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PatternResult:
-    """Data class to hold pattern detection results"""
     name: str
     strength: str
     bullish: bool
     timestamp: pd.Timestamp
 
 class PatternDetector:
-    """Enhanced pattern detector"""
+    """Detects basic candlestick patterns without using TA-Lib."""
 
-    BULLISH_PATTERNS = {
-        'CDLENGULFING': ('Engulfing Pattern', 'Strong'),
-        'CDLHAMMER': ('Hammer', 'Strong'),
-        'CDLMORNINGSTAR': ('Morning Star', 'Strong'),
-        'CDLDOJI': ('Doji', 'Weak'),
-        'CDLSHOOTINGSTAR': ('Shooting Star', 'Medium'),
-        'CDLHARAMI': ('Harami Pattern', 'Medium'),
-        'CDLPIERCING': ('Piercing Pattern', 'Strong'),
-        'CDLDARKCLOUDCOVER': ('Dark Cloud Cover', 'Strong'),
-        'CDL3WHITESOLDIERS': ('Three Advancing White Soldiers', 'Strong'),
-        'CDL3BLACKCROWS': ('Three Black Crows', 'Strong'),
-    }
+    @staticmethod
+    def detect_patterns(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df["Pattern"] = ""
+        df["Pattern_Strength"] = ""
 
-    @classmethod
-    def detect_patterns(cls, df: pd.DataFrame) -> pd.DataFrame:
-        try:
-            result_df = df.copy()
-            result_df['Pattern'] = ''
-            result_df['Pattern_Strength'] = ''
+        for i in range(2, len(df)):
+            o = df.iloc[i]["Open"]
+            h = df.iloc[i]["High"]
+            l = df.iloc[i]["Low"]
+            c = df.iloc[i]["Close"]
 
-            required_cols = ['Open', 'High', 'Low', 'Close']
-            if not all(col in df.columns for col in required_cols):
-                logger.error(f"Missing required OHLC columns. Found: {df.columns.tolist()}")
-                return result_df
+            prev_o = df.iloc[i - 1]["Open"]
+            prev_c = df.iloc[i - 1]["Close"]
+            prev2_c = df.iloc[i - 2]["Close"]
 
-            open_prices = df['Open'].values
-            high_prices = df['High'].values
-            low_prices = df['Low'].values
-            close_prices = df['Close'].values
+            pattern = ""
+            strength = "Medium"
+            bullish = None
 
-            detected_patterns = []
+            # Engulfing
+            if c > o and prev_c < prev_o and o < prev_c and c > prev_o:
+                pattern = "Engulfing Bullish"
+                bullish = True
+                strength = "Strong"
+            elif c < o and prev_c > prev_o and o > prev_c and c < prev_o:
+                pattern = "Engulfing Bearish"
+                bullish = False
+                strength = "Strong"
 
-            for pattern_func, (pattern_name, strength) in cls.BULLISH_PATTERNS.items():
-                try:
-                    talib_func = getattr(talib, pattern_func)
-                    pattern_result = talib_func(open_prices, high_prices, low_prices, close_prices)
-                    pattern_indices = np.where(pattern_result != 0)[0]
+            # Doji
+            elif abs(c - o) / (h - l + 1e-9) < 0.1:
+                pattern = "Doji"
+                bullish = None
+                strength = "Weak"
 
-                    for idx in pattern_indices:
-                        signal_value = pattern_result[idx]
-                        is_bullish = signal_value > 0
-                        detected_patterns.append({
-                            'index': idx,
-                            'pattern': pattern_name,
-                            'strength': strength,
-                            'bullish': is_bullish
-                        })
-                except Exception as e:
-                    logger.warning(f"Error detecting pattern {pattern_func}: {str(e)}")
-                    continue
+            # Hammer
+            elif (c > o and (o - l) / (h - l + 1e-9) > 0.6 and (h - c) / (h - l + 1e-9) < 0.2):
+                pattern = "Hammer"
+                bullish = True
+                strength = "Strong"
 
-            for pattern_info in detected_patterns:
-                idx = pattern_info['index']
-                direction = "🟢 Bullish" if pattern_info['bullish'] else "🔴 Bearish"
-                pattern_text = f"{direction} {pattern_info['pattern']}"
+            # Shooting Star
+            elif (c < o and (h - o) / (h - l + 1e-9) > 0.6 and (c - l) / (h - l + 1e-9) < 0.2):
+                pattern = "Shooting Star"
+                bullish = False
+                strength = "Medium"
 
-                if result_df.iloc[idx]['Pattern']:
-                    result_df.iloc[idx, result_df.columns.get_loc('Pattern')] += f" | {pattern_text}"
-                else:
-                    result_df.iloc[idx, result_df.columns.get_loc('Pattern')] = pattern_text
+            # Morning Star (requires 3 candles)
+            if i >= 2:
+                c1 = df.iloc[i - 2]["Close"]
+                o1 = df.iloc[i - 2]["Open"]
+                c2 = df.iloc[i - 1]["Close"]
+                o2 = df.iloc[i - 1]["Open"]
+                if c1 < o1 and abs(c2 - o2) < 0.1 and c > o and c > ((c1 + o1) / 2):
+                    pattern = "Morning Star"
+                    bullish = True
+                    strength = "Strong"
 
-                result_df.iloc[idx, result_df.columns.get_loc('Pattern_Strength')] = pattern_info['strength']
+            if pattern:
+                direction = "🟢 Bullish" if bullish else "🔴 Bearish" if bullish is False else "⚪ Neutral"
+                df.at[df.index[i], "Pattern"] = f"{direction} {pattern}"
+                df.at[df.index[i], "Pattern_Strength"] = strength
 
-            logger.info(f"Detected {len(detected_patterns)} pattern signals across {len(df)} candles")
-            return result_df
+        return df
 
-        except Exception as e:
-            logger.error(f"Error in pattern detection: {str(e)}")
-            result_df = df.copy()
-            result_df['Pattern'] = ''
-            result_df['Pattern_Strength'] = ''
-            return result_df
-
-    @classmethod
-    def get_recent_patterns(cls, df: pd.DataFrame, lookback_periods: int = 3) -> List[PatternResult]:
-        try:
-            if 'Pattern' not in df.columns:
-                return []
-
-            recent_df = df.tail(lookback_periods)
-            patterns = []
-
-            for idx, row in recent_df.iterrows():
-                if row['Pattern'] and row['Pattern'].strip():
-                    pattern_parts = row['Pattern'].split('|')
-
-                    for pattern_part in pattern_parts:
-                        pattern_part = pattern_part.strip()
-                        if pattern_part:
-                            is_bullish = "🟢 Bullish" in pattern_part
-                            pattern_name = pattern_part.replace("🟢 Bullish ", "").replace("🔴 Bearish ", "")
-                            patterns.append(PatternResult(
-                                name=pattern_name,
-                                strength=row.get('Pattern_Strength', 'Medium'),
-                                bullish=is_bullish,
-                                timestamp=idx if hasattr(idx, 'strftime') else pd.Timestamp.now()
-                            ))
-
-            return patterns
-
-        except Exception as e:
-            logger.error(f"Error extracting recent patterns: {str(e)}")
+    @staticmethod
+    def get_recent_patterns(df: pd.DataFrame, lookback_periods: int = 5) -> List[PatternResult]:
+        if "Pattern" not in df.columns:
             return []
 
-# Main compatibility wrapper
+        recent_df = df.tail(lookback_periods)
+        results = []
+
+        for idx, row in recent_df.iterrows():
+            text = row["Pattern"]
+            if not text or text == "None":
+                continue
+
+            bullish = "🟢" in text
+            bearish = "🔴" in text
+            neutral = "⚪" in text
+
+            pattern_name = text.split(" ", 1)[-1]
+            strength = row.get("Pattern_Strength", "Medium")
+
+            results.append(
+                PatternResult(
+                    name=pattern_name,
+                    strength=strength,
+                    bullish=True if bullish else False if bearish else None,
+                    timestamp=idx if hasattr(idx, "strftime") else pd.Timestamp.now()
+                )
+            )
+        return results
+
+# Main entry for legacy usage
 def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
     return PatternDetector.detect_patterns(df)
