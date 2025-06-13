@@ -164,8 +164,14 @@ async def send_news_and_events():
 
 
 # ────────────── Background Alert Loop ──────────────
+# ────────────── Background Alert Loop ──────────────
 async def background_alerts():
     logger.info("Background alert system started")
     while True:
         try:
             await send_pattern_alerts()
+            await send_news_and_events()
+            logger.info("✅ Alerts sent")
+        except Exception as e:
+            logger.error(f"[Background Loop] {e}")
+        await asyncio.sleep(60 * 15)  # 15 minutes
