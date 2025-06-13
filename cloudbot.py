@@ -88,10 +88,8 @@ async def send_pattern_alerts():
             if alert:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
 
-        except Exception as e:
-            logger.error(f"[Pattern Alert] {symbol}: {e}")
-    except Exception as exc:
-        logger.error(f"Error in send_pattern_alerts: {exc}")
+        except Exception as exc:
+            logger.error(f"[Pattern Alert] {symbol}: {exc}")
 
 
 async def send_pair_pattern_alert(pair: str, patterns: List[PatternResult], df: pd.DataFrame):
