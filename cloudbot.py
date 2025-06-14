@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update, Bot
 import pandas as pd
-from pattern_detector import detect_patterns
+from pattern_detector import detect_candle_patterns
 from typing import List
 
 # Import your existing modules
