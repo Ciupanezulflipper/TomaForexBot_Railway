@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update, Bot
 import pandas as pd
+from pattern_detector import detect_patterns
 from typing import List
 
 # Import your existing modules
@@ -175,3 +176,6 @@ async def background_alerts():
         except Exception as e:
             logger.error(f"[Background Loop] {e}")
         await asyncio.sleep(60 * 15)  # 15 minutes
+async def run_bot_loop():
+    await background_alerts()
+
