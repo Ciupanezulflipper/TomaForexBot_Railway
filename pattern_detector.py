@@ -86,3 +86,6 @@ class PatternDetector:
 
 def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
     return PatternDetector.detect_patterns(df)
+
+detect_patterns = PatternDetector.detect_patterns
+

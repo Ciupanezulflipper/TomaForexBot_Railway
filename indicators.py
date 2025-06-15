@@ -14,15 +14,15 @@ def calculate_ema(series: pd.Series, period: int = 9) -> pd.Series:
     return series.ewm(span=period, adjust=False).mean()
 
 
-def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    """Return the Relative Strength Index series."""
-    print(f"[DEBUG] rsi input: {series.name}, length={len(series)}")
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
+def calculate_rsi(close: pd.Series, period: int = 14):
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
 
     avg_gain = gain.rolling(window=period).mean()
     avg_loss = loss.rolling(window=period).mean()
+
+    # Avoid division by zero
     rs = avg_gain / avg_loss.replace(to_replace=0, method="ffill")
     rsi = 100 - (100 / (1 + rs))
     return rsi

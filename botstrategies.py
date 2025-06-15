@@ -7,6 +7,7 @@ from fibonacci import calculate_fibonacci_levels, match_fibonacci_price
 from logger import log_to_csv
 from charting import generate_pro_chart
 from marketdata import get_ohlc
+from pattern_detector import detect_patterns
 from telegramsender import send_telegram_message, send_telegram_photo
 
 print("🧪 botstrategies.py loaded from", __file__)
@@ -24,6 +25,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         df["ema21"] = calculate_ema(df["close"], 21)
         df["rsi"] = calculate_rsi(df["close"], 14)
         df = detect_candle_patterns(df)
+        df = detect_patterns(df)
 
         last = df.iloc[-1]
         pattern = last.get('pattern', 'Unknown')
@@ -38,8 +40,11 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
         rsi = float(rsi_val) if pd.notnull(rsi_val) and not isinstance(rsi_val, pd.Series) else 0.0
 
         # Fix: Pass correct float to Fibonacci + risk analysis
-        last_price = float(df["close"].iloc[-1])
-        fib = calculate_fibonacci_levels(last_price)
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        fib = calculate_fibonacci_levels(high, low, close)
+        last_price = float(close.iloc[-1])
         risk_zone = match_fibonacci_price(last_price, fib)
 
         signal = "BUY" if ema9 > ema21 else "SELL"
@@ -85,6 +90,7 @@ async def analyze_symbol(df, symbol, timeframe="H1", chat_id=None):
 # 🔹 Single symbol analysis entry point
 async def analyze_symbol_single(symbol, timeframe="H1"):
     df = await get_ohlc(symbol, timeframe, bars=200)
+    df.rename(columns=lambda x: x.capitalize(), inplace=True)
     if df is None or df.empty:
         return f"❌ No data for {symbol}"
 
