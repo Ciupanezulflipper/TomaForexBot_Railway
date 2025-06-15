@@ -1,7 +1,8 @@
 from flask import Flask
 import os
 import asyncio
-from cloudbot import run_bot_loop  # make sure this function exists in cloudbot.py
+import threading
+from cloudbot import run_bot_loop  # must be an async function
 
 app = Flask(__name__)
 
@@ -13,10 +14,15 @@ def home():
 def health():
     return 'OK'
 
+def start_async_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_bot_loop())
+
 @app.before_first_request
-def start_background_task():
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_bot_loop())  # run your bot in background
+def launch_background():
+    thread = threading.Thread(target=start_async_loop)
+    thread.start()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
