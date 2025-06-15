@@ -1,52 +1,46 @@
-import aiohttp
 import os
-import logging
+import signal
 import asyncio
+import logging
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import pandas as pd
 from typing import List
 
-# Load environment
+# ────────────── Load .env and config ──────────────
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
-# Logging
+# ────────────── Logging ──────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
-# Bot
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# ────────────── Imports from local modules ──────────────
-from botstrategies import analyze_symbol_single
-from core.signal_fusion import generate_trade_decision
-from charting import generate_pro_chart_async
+# ────────────── Imports ──────────────
 from marketdata import get_ohlc
-from economic_calendar_module import fetch_major_events, fetch_all_calendar, analyze_events
-from statushandler import handle_status, connect_finnhub, connect_yahoo
-from news_fetcher import fetch_combined_news
-from news_signal_logic import analyze_multiple_headlines
-from news_feeds import analyze_all_feeds
-from patterns import detect_candle_patterns, PatternResult
 from indicators import calculate_rsi
+from patterns import detect_candle_patterns, PatternResult
+from economic_calendar_module import fetch_all_calendar, analyze_events
 
-# ────────────── Command: /calendar ──────────────
+# ────────────── Telegram Commands ──────────────
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Bot is running and ready!")
+
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         events = analyze_events(fetch_all_calendar())
         if not events:
-            await update.message.reply_text("📅 No major economic events right now.")
+            await update.message.reply_text("📅 No major economic events now.")
             return
 
         msg = "📅 Upcoming Economic Events:\n\n"
-        for e in events[:6]:
+        for e in events[:5]:
             msg += f"{e['date']} - {e['event']} - {e['impact']}\n"
 
         await update.message.reply_text(msg)
@@ -54,13 +48,10 @@ async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[Calendar] {e}")
         await update.message.reply_text(f"❌ Error: {e}")
 
-# ────────────── Pattern Alerts ──────────────
+# ────────────── Alert System ──────────────
 async def send_pattern_alerts():
     PAIRS = ["EURUSD", "GBPUSD", "USDJPY"]
     TIMEFRAME = "H1"
-    MIN_RSI_BUY = 35
-    MAX_RSI_SELL = 65
-
     for symbol in PAIRS:
         try:
             df = await get_ohlc(symbol, TIMEFRAME, bars=100)
@@ -68,99 +59,85 @@ async def send_pattern_alerts():
                 logger.warning(f"[{symbol}] No data.")
                 continue
 
-            patterns = detect_candle_patterns(df, max_patterns=3)
+            patterns = detect_candle_patterns(df)
             rsi_series = calculate_rsi(df["close"], 14)
             latest_rsi = rsi_series.iloc[-1] if isinstance(rsi_series, pd.Series) else rsi_series
 
-            alert = None
+            alerts = []
+            for p in patterns[-3:]:
+                if "Bullish" in p and latest_rsi < 35:
+                    alerts.append(f"🟢 BUY {symbol} ({TIMEFRAME})\n{p}\nRSI: {latest_rsi:.2f}")
+                elif "Bearish" in p and latest_rsi > 65:
+                    alerts.append(f"🔴 SELL {symbol} ({TIMEFRAME})\n{p}\nRSI: {latest_rsi:.2f}")
 
-            if any(p for p in patterns if "Bullish" in p):
-                if latest_rsi < MIN_RSI_BUY:
-                    alert = f"🚀 BUY Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
-
-            elif any(p for p in patterns if "Bearish" in p):
-                if latest_rsi > MAX_RSI_SELL:
-                    alert = f"📉 SELL Signal on {symbol} ({TIMEFRAME})\nPattern: {patterns[-1]}\nRSI: {latest_rsi:.2f}"
-
-            if alert:
+            for alert in alerts:
                 await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=alert)
 
-        except Exception as exc:
-            logger.error(f"[Pattern Alert] {symbol}: {exc}")
-
-async def send_pair_pattern_alert(pair: str, patterns: List[PatternResult], df: pd.DataFrame):
-    try:
-        current_price = df["close"].iloc[-1]
-        price_change = ((df["close"].iloc[-1] / df["close"].iloc[-2]) - 1) * 100
-
-        pattern_texts = []
-        for pattern in patterns:
-            direction_emoji = "🟢" if pattern.bullish else "🔴"
-            direction_text = "Bullish" if pattern.bullish else "Bearish"
-            strength_emoji = get_strength_emoji(pattern.strength)
-            pattern_texts.append(f"{direction_emoji} {direction_text} {pattern.name} {strength_emoji}")
-
-        pattern_lines = "\n".join(f"• {p}" for p in pattern_texts)
-
-        alert_message = (
-            f"🔍 **Pattern Alert: {pair}**\n\n"
-            f"📊 **Current Price:** {current_price:.5f}\n"
-            f"📈 **Change:** {price_change:+.2f}%\n\n"
-            f"🕯️ **Detected Patterns:**\n{pattern_lines}\n\n"
-            f"⏰ **Time:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')}\n\n"
-            f"#PatternAlert #{pair} #TechnicalAnalysis"
-        )
-
-        await send_to_all_channels(alert_message)
-        logger.info(f"📊 Pattern alert sent for {pair}: {len(patterns)} patterns detected")
-
-    except Exception as exc:
-        logger.error(f"Error sending pattern alert for {pair}: {exc}")
-
-def get_strength_emoji(strength: str) -> str:
-    strength_lower = strength.lower()
-    if strength_lower == "strong":
-        return "🔥"
-    if strength_lower == "medium":
-        return "⚡"
-    if strength_lower == "weak":
-        return "💫"
-    return "📊"
-
-async def send_to_all_channels(message: str):
-    try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except Exception as exc:
-        logger.error(f"Error sending to channels: {exc}")
-
-# ────────────── News + Calendar Alerts ──────────────
-async def send_news_and_events():
-    try:
-        news = await fetch_combined_news()
-        if news:
-            headlines = [f"📰 {item['headline']}" for item in news[:3]]
-            msg = "🗞 Top News:\n" + "\n".join(headlines)
-            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-
-        events = analyze_events(fetch_all_calendar())
-        for event in events[:3]:
-            msg = f"🗓 {event['date']} | {event['event']}\nImpact: {event['impact']} | Affected: {event['affected']}"
-            await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-    except Exception as e:
-        logger.error(f"[News/Events] {e}")
-
-# ────────────── Background Alert Loop ──────────────
-async def background_alerts():
-    logger.info("Background alert system started")
-    while True:
-        try:
-            await send_pattern_alerts()
-            await send_news_and_events()
-            logger.info("✅ Alerts sent")
         except Exception as e:
-            logger.error(f"[Background Loop] {e}")
-        await asyncio.sleep(60 * 15)
+            logger.error(f"[Alert Error] {symbol}: {e}")
 
-# ────────────── Entrypoint for webserver ──────────────
-async def run_bot_loop():
-    await background_alerts()
+# ────────────── Bot Runner ──────────────
+class BotRunner:
+    def __init__(self):
+        self.shutdown_event = asyncio.Event()
+        self.background_task = None
+        self.app = None
+
+    async def background_alerts(self):
+        logger.info("🔁 Background alerts running...")
+        while not self.shutdown_event.is_set():
+            try:
+                await send_pattern_alerts()
+                logger.info("✅ Alerts sent.")
+            except Exception as e:
+                logger.error(f"[Alert Loop Error] {e}")
+
+            try:
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=900)
+            except asyncio.TimeoutError:
+                continue
+
+    async def start(self):
+        self.app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+        self.app.add_handler(CommandHandler("start", start_command))
+        self.app.add_handler(CommandHandler("calendar", calendar_command))
+
+        self.background_task = asyncio.create_task(self.background_alerts())
+        await self.app.run_polling()
+
+    async def stop(self):
+        logger.info("🛑 Graceful shutdown started...")
+        self.shutdown_event.set()
+
+        if self.background_task:
+            await self.background_task
+
+        if self.app:
+            await self.app.shutdown()
+            await self.app.stop()
+
+# ────────────── Signal Handlers ──────────────
+def setup_signal_handlers(runner: BotRunner):
+    def _signal_handler(sig, frame):
+        logger.info(f"🚨 Received signal: {sig}")
+        asyncio.create_task(runner.stop())
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+
+# ────────────── Entrypoint ──────────────
+async def main():
+    runner = BotRunner()
+    setup_signal_handlers(runner)
+
+    try:
+        await runner.start()
+    except KeyboardInterrupt:
+        logger.info("🔌 Stopped by keyboard")
+    except Exception as e:
+        logger.error(f"❌ Fatal: {e}")
+    finally:
+        await runner.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
