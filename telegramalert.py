@@ -1,29 +1,33 @@
-import os
-import requests
+# telegramalert.py (patch to avoid crashing if telegrambot isn't initialized yet)
+
+try:
+    from telegrambot import send_telegram_message
+except ImportError:
+    def send_telegram_message(msg):
+        print("[DEBUG] Telegram not set up, fallback to print:", msg)
+
 from secure_env_loader import load_env
+from patterns import detect_patterns
+from marketdata import get_ohlc
 
 load_env()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Must be set in your .env
 
-def send_alert_message(text: str):
-    """Send plain text message to Telegram chat."""
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("❌ Telegram token or chat ID not set.")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-
+def send_pattern_alerts(symbol: str, timeframe: str = 'H1'):
     try:
-        response = requests.post(url, json=payload)
-        if response.status_code != 200:
-            print(f"⚠️ Telegram alert failed: {response.text}")
+        ohlc = get_ohlc(symbol, timeframe)
+        patterns = detect_patterns(ohlc)
+
+        if patterns:
+            message = f"📌 Pattern Alert for {symbol} [{timeframe}]:\n"
+            message += '\n'.join([f"- {p}" for p in patterns])
+            send_telegram_message(message)
         else:
-            print("📤 Alert sent to Telegram.")
+            print(f"No patterns detected for {symbol} [{timeframe}].")
+
     except Exception as e:
-        print(f"❌ Error sending Telegram alert: {str(e)}")
+        print(f"Error in send_pattern_alerts: {e}")
+
+
+def send_news_and_events(symbol: str):
+    message = f"📰 Placeholder: No live news API logic yet for {symbol}."
+    send_telegram_message(message)

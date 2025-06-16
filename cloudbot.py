@@ -1,4 +1,5 @@
 import os
+from eventdriven_scheduler import monitor_major_events
 import asyncio
 import logging
 import signal
@@ -90,4 +91,6 @@ async def main():
         await runner.stop()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(monitor_major_events())
+    loop.run_forever()

@@ -1,3 +1,5 @@
+# patterns.py (final version using your real pattern logic)
+
 import pandas as pd
 import numpy as np
 import logging
@@ -32,11 +34,9 @@ class PatternDetector:
             patterns = []
             for i in range(1, len(df)):
                 if close_prices[i] > open_prices[i] and close_prices[i - 1] < open_prices[i - 1]:
-                    # Bullish Engulfing
                     if close_prices[i] > open_prices[i - 1] and open_prices[i] < close_prices[i - 1]:
                         patterns.append((i, 'Engulfing Pattern', 'Strong', True))
                 elif close_prices[i] < open_prices[i] and close_prices[i - 1] > open_prices[i - 1]:
-                    # Bearish Engulfing
                     if open_prices[i] > close_prices[i - 1] and close_prices[i] < open_prices[i - 1]:
                         patterns.append((i, 'Engulfing Pattern', 'Strong', False))
 
@@ -84,5 +84,5 @@ class PatternDetector:
             logger.error(f"Error extracting recent patterns: {str(e)}")
             return []
 
-def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
+def detect_patterns(df: pd.DataFrame) -> pd.DataFrame:
     return PatternDetector.detect_patterns(df)
