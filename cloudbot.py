@@ -2,9 +2,8 @@ from dotenv import load_dotenv
 load_dotenv()  # ✅ Load before anything else
 
 import os
-import asyncio
 import logging
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, Application
 from eventdriven_scheduler import monitor_major_events
 from telegramalert import send_pattern_alerts, send_news_and_events
 
@@ -30,31 +29,36 @@ async def scan(update, context):
 async def status(update, context):
     await update.message.reply_text("✅ Bot is online and scheduler is active.")
 
+# ─── Async Setup ───
+async def post_init(application: Application) -> None:
+    await application.bot.set_my_commands([
+        ("start", "Start the bot"),
+        ("scan", "Scan symbols"),
+        ("status", "Bot status"),
+    ])
+    application.create_task(monitor_major_events())
+
 # ─── Telegram App Setup ───
-async def main():
+def main() -> None:
     logger.info("🚀 Launching bot...")
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("status", status))
 
     logger.info("🤖 Starting Telegram bot polling...")
-    await app.bot.set_my_commands([
-        ("start", "Start the bot"),
-        ("scan", "Scan symbols"),
-        ("status", "Bot status")
-    ])
-
-    await asyncio.gather(
-        app.run_polling(close_loop=False),
-        monitor_major_events()
-    )
+    app.run_polling()
 
 # ─── Entry Point ───
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except (KeyboardInterrupt, SystemExit):
         logger.info("👋 Gracefully shutting down...")
