@@ -1,3 +1,4 @@
+# ─── cloudbot.py (cleaned + updated for python-telegram-bot v20+) ───
 import os
 import asyncio
 import logging
@@ -11,25 +12,20 @@ from dotenv import load_dotenv
 
 # ─── Load Environment ───
 load_dotenv()
-
-# ─── Logging Setup ───
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# ─── Global Constants ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# ─── Telegram Handlers ───
+# ─── Logging ───
+logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ─── Telegram Commands ───
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot is running! Use /calendar to check events.")
 
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📅 Economic calendar feature is under construction.")
 
-# ─── Bot Lifecycle Class ───
+# ─── BotRunner Class ───
 class BotRunner:
     def __init__(self):
         self.shutdown_event = asyncio.Event()
@@ -61,14 +57,9 @@ class BotRunner:
         self.app.add_handler(CommandHandler("calendar", calendar_command))
 
         self.background_task = asyncio.create_task(self.background_alerts())
-
-        try:
-            await self.app.initialize()
-            await self.app.start()
-            await self.app.updater.start_polling()
-            await self.app.updater.idle()
-        finally:
-            await self.stop()
+        await self.app.initialize()
+        await self.app.start()
+        await self.app.run_polling()
 
     async def stop(self):
         logger.info("🛑 Graceful shutdown started...")
@@ -76,12 +67,10 @@ class BotRunner:
         if self.background_task:
             await self.background_task
         if self.app:
-            await self.app.updater.stop()
             await self.app.stop()
-            await self.app.shutdown()
         logger.info("✅ Bot stopped.")
 
-# ─── Signal Setup ───
+# ─── Signals ───
 def setup_signal_handlers(runner: BotRunner):
     def stop_loop(signum, frame):
         logger.info(f"📴 Received signal {signum}.")
@@ -90,7 +79,7 @@ def setup_signal_handlers(runner: BotRunner):
     signal.signal(signal.SIGINT, stop_loop)
     signal.signal(signal.SIGTERM, stop_loop)
 
-# ─── Entrypoint for CLI ───
+# ─── Main Entrypoint ───
 async def main():
     logger.info("🚀 Launching bot...")
     runner = BotRunner()
@@ -102,10 +91,73 @@ async def main():
     finally:
         await runner.stop()
 
-# ─── Entrypoint for Web ───
-async def run_bot_loop():
-    await asyncio.gather(main(), monitor_major_events())
-
-# ─── Main Block ───
 if __name__ == "__main__":
-    asyncio.run(run_bot_loop())
+    asyncio.run(asyncio.gather(main(), monitor_major_events()))
+
+
+# ─── patterns.py (clean + only essential logic) ───
+import pandas as pd
+import logging
+from typing import List
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class PatternResult:
+    name: str
+    strength: str
+    bullish: bool
+    timestamp: pd.Timestamp
+
+class PatternDetector:
+    @classmethod
+    def detect_patterns(cls, df: pd.DataFrame) -> pd.DataFrame:
+        result_df = df.copy()
+        result_df['Pattern'] = ''
+        result_df['Pattern_Strength'] = ''
+
+        # Normalize column names
+        rename_map = {
+            'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close'
+        }
+        result_df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+
+        if not all(col in result_df.columns for col in ['Open', 'High', 'Low', 'Close']):
+            logger.error("Missing OHLC columns.")
+            return result_df
+
+        open_ = result_df['Open'].values
+        close = result_df['Close'].values
+
+        for i in range(1, len(result_df)):
+            if close[i] > open_[i] and close[i-1] < open_[i-1] and close[i] > open_[i-1] and open_[i] < close[i-1]:
+                result_df.at[result_df.index[i], 'Pattern'] = "🟢 Bullish Engulfing"
+                result_df.at[result_df.index[i], 'Pattern_Strength'] = "Strong"
+            elif close[i] < open_[i] and close[i-1] > open_[i-1] and open_[i] > close[i-1] and close[i] < open_[i-1]:
+                result_df.at[result_df.index[i], 'Pattern'] = "🔴 Bearish Engulfing"
+                result_df.at[result_df.index[i], 'Pattern_Strength'] = "Strong"
+
+        return result_df
+
+    @classmethod
+    def get_recent_patterns(cls, df: pd.DataFrame, lookback: int = 3) -> List[PatternResult]:
+        if 'Pattern' not in df.columns:
+            return []
+
+        recent_df = df.tail(lookback)
+        patterns = []
+        for idx, row in recent_df.iterrows():
+            if isinstance(row['Pattern'], str) and row['Pattern']:
+                patterns.append(PatternResult(
+                    name=row['Pattern'].replace("🟢 Bullish ", "").replace("🔴 Bearish ", ""),
+                    strength=row['Pattern_Strength'],
+                    bullish="🟢" in row['Pattern'],
+                    timestamp=idx if hasattr(idx, 'strftime') else pd.Timestamp.now()
+                ))
+        return patterns
+
+def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    return PatternDetector.detect_patterns(df)
+
+detect_patterns = PatternDetector.detect_patterns
