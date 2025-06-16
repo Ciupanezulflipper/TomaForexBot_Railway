@@ -40,11 +40,14 @@ async def main():
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("status", status))
 
+    await app.bot.set_my_commands([
+        ("start", "Start the bot"),
+        ("scan", "Scan symbols"),
+        ("status", "Bot status")
+    ])
+
     logger.info("🤖 Starting Telegram bot polling...")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    await app.run_polling(close_loop=False)
 
 # ─── Entry Point: Run Bot + Scheduler ───
 async def run_all():
