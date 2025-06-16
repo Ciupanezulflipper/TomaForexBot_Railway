@@ -11,24 +11,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ───── Logging ─────
+# ─── Logging ───
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ───── ENV ─────
+# ─── ENV ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# ───── Handlers ─────
+# ─── Handlers ───
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot is running! Use /calendar to check events.")
 
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📅 Economic calendar feature is under construction.")
+    await update.message.reply_text("🗕️ Economic calendar feature is under construction.")
 
-# ───── Bot Runner ─────
+# ─── Bot Runner ───
 class BotRunner:
     def __init__(self):
         self.shutdown_event = asyncio.Event()
@@ -39,8 +39,8 @@ class BotRunner:
         logger.info("🔁 Background alerts running...")
         while not self.shutdown_event.is_set():
             try:
-                await send_pattern_alerts()
-                await send_news_and_events()
+                await send_pattern_alerts("EURUSD")
+                await send_news_and_events("EURUSD")
                 logger.info("✅ Alerts sent.")
             except Exception as e:
                 logger.error(f"[Background] {e}")
@@ -69,7 +69,7 @@ class BotRunner:
         if self.app:
             logger.info("✅ Bot stopped.")
 
-# ───── Signal Handling ─────
+# ─── Signal Handling ───
 def setup_signal_handlers(runner: BotRunner):
     def stop_loop(signum, frame):
         logger.info(f"📴 Received signal {signum}.")
@@ -78,7 +78,7 @@ def setup_signal_handlers(runner: BotRunner):
     signal.signal(signal.SIGINT, stop_loop)
     signal.signal(signal.SIGTERM, stop_loop)
 
-# ───── Entrypoint ─────
+# ─── Entrypoint ───
 async def main():
     logger.info("🚀 Launching bot...")
     runner = BotRunner()
@@ -92,5 +92,6 @@ async def main():
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+    loop.create_task(main())
     loop.create_task(monitor_major_events())
     loop.run_forever()
