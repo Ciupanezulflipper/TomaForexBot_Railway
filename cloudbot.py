@@ -1,34 +1,35 @@
 import os
-from eventdriven_scheduler import monitor_major_events
 import asyncio
 import logging
 import signal
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+from eventdriven_scheduler import monitor_major_events
 from telegramalert import send_pattern_alerts, send_news_and_events
 from dotenv import load_dotenv
 
+# ─── Load Environment ───
 load_dotenv()
 
-# ─── Logging ───
+# ─── Logging Setup ───
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ─── ENV ───
+# ─── Global Constants ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# ─── Handlers ───
+# ─── Telegram Handlers ───
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot is running! Use /calendar to check events.")
 
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🗕️ Economic calendar feature is under construction.")
+    await update.message.reply_text("📅 Economic calendar feature is under construction.")
 
-# ─── Bot Runner ───
+# ─── Bot Lifecycle Class ───
 class BotRunner:
     def __init__(self):
         self.shutdown_event = asyncio.Event()
@@ -37,10 +38,15 @@ class BotRunner:
 
     async def background_alerts(self):
         logger.info("🔁 Background alerts running...")
+        symbols = ["EURUSD", "XAUUSD", "US30"]
+        timeframes = ["H1"]
+
         while not self.shutdown_event.is_set():
             try:
-                await send_pattern_alerts("EURUSD")
-                await send_news_and_events("EURUSD")
+                for symbol in symbols:
+                    for tf in timeframes:
+                        await send_pattern_alerts(symbol, tf)
+                        await send_news_and_events(symbol)
                 logger.info("✅ Alerts sent.")
             except Exception as e:
                 logger.error(f"[Background] {e}")
@@ -57,7 +63,10 @@ class BotRunner:
         self.background_task = asyncio.create_task(self.background_alerts())
 
         try:
-            await self.app.run_polling()
+            await self.app.initialize()
+            await self.app.start()
+            await self.app.updater.start_polling()
+            await self.app.updater.idle()
         finally:
             await self.stop()
 
@@ -67,9 +76,12 @@ class BotRunner:
         if self.background_task:
             await self.background_task
         if self.app:
-            logger.info("✅ Bot stopped.")
+            await self.app.updater.stop()
+            await self.app.stop()
+            await self.app.shutdown()
+        logger.info("✅ Bot stopped.")
 
-# ─── Signal Handling ───
+# ─── Signal Setup ───
 def setup_signal_handlers(runner: BotRunner):
     def stop_loop(signum, frame):
         logger.info(f"📴 Received signal {signum}.")
@@ -78,7 +90,7 @@ def setup_signal_handlers(runner: BotRunner):
     signal.signal(signal.SIGINT, stop_loop)
     signal.signal(signal.SIGTERM, stop_loop)
 
-# ─── Entrypoint ───
+# ─── Entrypoint for CLI ───
 async def main():
     logger.info("🚀 Launching bot...")
     runner = BotRunner()
@@ -90,8 +102,10 @@ async def main():
     finally:
         await runner.stop()
 
+# ─── Entrypoint for Web ───
+async def run_bot_loop():
+    await asyncio.gather(main(), monitor_major_events())
+
+# ─── Main Block ───
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())
-    loop.create_task(monitor_major_events())
-    loop.run_forever()
+    asyncio.run(run_bot_loop())

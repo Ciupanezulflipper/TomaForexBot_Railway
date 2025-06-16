@@ -1,4 +1,4 @@
-# eventdriven_scheduler.py (create this file manually in your project)
+# eventdriven_scheduler.py (clean, async-safe version)
 
 import asyncio
 from datetime import datetime
@@ -21,12 +21,12 @@ async def monitor_major_events():
         if is_market_active():
             for symbol in symbols:
                 for tf in timeframes:
-                    send_pattern_alerts(symbol, tf)
-                    send_news_and_events(symbol)
+                    await send_pattern_alerts(symbol, tf)
+                    await send_news_and_events(symbol)
         else:
             print("[INFO] Market inactive. Skipping scan.")
 
-        await asyncio.sleep(900)  # 15 min
+        await asyncio.sleep(900)  # wait 15 minutes before next scan
 
 if __name__ == "__main__":
     asyncio.run(monitor_major_events())

@@ -1,26 +1,21 @@
-# telegramalert.py (patch to avoid crashing if telegrambot isn't initialized yet)
-
-try:
-    from telegrambot import send_telegram_message
-except ImportError:
-    def send_telegram_message(msg):
-        print("[DEBUG] Telegram not set up, fallback to print:", msg)
-
+import os
 from secure_env_loader import load_env
 from patterns import detect_patterns
 from marketdata import get_ohlc
+from telegramsender import send_telegram_message
 
 load_env()
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
 
-def send_pattern_alerts(symbol: str, timeframe: str = 'H1'):
+async def send_pattern_alerts(symbol: str, timeframe: str = 'H1'):
     try:
-        ohlc = get_ohlc(symbol, timeframe)
+        ohlc = await get_ohlc(symbol, timeframe)
         patterns = detect_patterns(ohlc)
 
         if patterns:
-            message = f"📌 Pattern Alert for {symbol} [{timeframe}]:\n"
+            message = f"\ud83d\udccc Pattern Alert for {symbol} [{timeframe}]:\n"
             message += '\n'.join([f"- {p}" for p in patterns])
-            send_telegram_message(message)
+            await send_telegram_message(message, TELEGRAM_CHAT_ID)
         else:
             print(f"No patterns detected for {symbol} [{timeframe}].")
 
@@ -28,6 +23,9 @@ def send_pattern_alerts(symbol: str, timeframe: str = 'H1'):
         print(f"Error in send_pattern_alerts: {e}")
 
 
-def send_news_and_events(symbol: str):
-    message = f"📰 Placeholder: No live news API logic yet for {symbol}."
-    send_telegram_message(message)
+async def send_news_and_events(symbol: str):
+    try:
+        message = f"\ud83d\udcf0 Placeholder: No live news API logic yet for {symbol}."
+        await send_telegram_message(message, TELEGRAM_CHAT_ID)
+    except Exception as e:
+        print(f"Error in send_news_and_events: {e}")
