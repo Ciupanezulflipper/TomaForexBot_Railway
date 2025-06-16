@@ -3,17 +3,25 @@ import aiohttp
 import pandas as pd
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
-API_KEY = os.getenv("FINNHUB_API_KEY")
+# Step 1: Load .env file at import time
+load_dotenv()
 
-if not API_KEY:
-    print("[⚠️] FINNHUB_API_KEY not set — skipping Finnhub requests.")
+# Step 2: Lazy API key getter
+def get_api_key():
+    key = os.getenv("FINNHUB_API_KEY")
+    if not key:
+        print("[⚠️] FINNHUB_API_KEY not set — skipping Finnhub requests.")
+    return key
 
+# Step 3: Async data fetcher
 async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
     """
     Fetch OHLC data from Finnhub for Forex or indices.
     """
-    if not API_KEY:
+    api_key = get_api_key()
+    if not api_key:
         return pd.DataFrame()
 
     base_url = "https://finnhub.io/api/v1/forex/candle"
@@ -47,7 +55,7 @@ async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
     now = int(datetime.utcnow().timestamp())
     past = now - limit * 3600  # adjust for H1 granularity
 
-    url = f"{base_url}?symbol={mapped_symbol}&resolution={resolution}&from={past}&to={now}&token={API_KEY}"
+    url = f"{base_url}?symbol={mapped_symbol}&resolution={resolution}&from={past}&to={now}&token={api_key}"
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -73,7 +81,7 @@ async def get_finnhub_data(symbol="EURUSD", interval="H1", limit=150):
         print(f"❌ Finnhub error: {e}")
         return pd.DataFrame()
 
-
+# Optional: score bar visual
 def score_bar(score):
     units = min(abs(score), 5)
     blocks = "█" * units
