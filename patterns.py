@@ -1,92 +1,86 @@
-# patterns.py (updated with OHLC normalization + DataFrame empty check)
+# Save as: patterns_test.py
+# Run with: python -m unittest patterns_test.py
 
+import unittest
 import pandas as pd
-import logging
-from typing import List
-from dataclasses import dataclass
+from datetime import datetime
+from patterns_extended import PatternDetector, PatternResult
 
-logger = logging.getLogger(__name__)
+class TestPatternDetector(unittest.TestCase):
+    def setUp(self):
+        # Sample OHLC data for 6 candles
+        # We design the 2nd and 4th candle to trigger bullish/bearish engulfing,
+        # the 5th for hammer, and the 6th for doji.
+        self.df = pd.DataFrame({
+            'open':  [10, 9, 11, 12, 10, 8],
+            'high':  [11, 10, 13, 13, 12, 9],
+            'low':   [8, 8, 10, 10, 8, 7.95],
+            'close': [9, 11, 12, 10, 11, 8.05],
+        }, index=[
+            # Use datetime index for pattern timestamp
+            pd.Timestamp("2024-01-01 10:00"),
+            pd.Timestamp("2024-01-01 11:00"),
+            pd.Timestamp("2024-01-01 12:00"),
+            pd.Timestamp("2024-01-01 13:00"),
+            pd.Timestamp("2024-01-01 14:00"),
+            pd.Timestamp("2024-01-01 15:00"),
+        ])
 
-@dataclass
-class PatternResult:
-    name: str
-    strength: str
-    bullish: bool
-    timestamp: pd.Timestamp
+    def test_detect_patterns_multiple(self):
+        result = PatternDetector.detect_patterns(self.df)
+        self.assertIn('Patterns', result.columns, "'Patterns' column missing.")
+        self.assertIn('Pattern_Strengths', result.columns, "'Pattern_Strengths' column missing.")
+        # Expect some non-empty pattern cells
+        patterns_found = result['Patterns'].fillna("").apply(lambda x: bool(x.strip()))
+        self.assertTrue(patterns_found.any(), "No patterns detected in any row.")
 
-class PatternDetector:
-    @classmethod
-    def detect_patterns(cls, df: pd.DataFrame) -> pd.DataFrame:
-        result_df = df.copy()
+    def test_bullish_engulfing(self):
+        result = PatternDetector.detect_patterns(self.df)
+        # At index 1 (2024-01-01 11:00), bullish engulfing is expected
+        patterns = str(result.loc[pd.Timestamp("2024-01-01 11:00"), 'Patterns'])
+        self.assertIn("🟢 Bullish Engulfing", patterns, "Bullish engulfing not detected where expected.")
 
-        # ✅ Normalize column names to match expected format
-        result_df = result_df.rename(columns={
-            'open': 'Open',
-            'high': 'High',
-            'low': 'Low',
-            'close': 'Close'
-        })
+    def test_bearish_engulfing(self):
+        result = PatternDetector.detect_patterns(self.df)
+        # At index 3 (2024-01-01 13:00), bearish engulfing is expected
+        patterns = str(result.loc[pd.Timestamp("2024-01-01 13:00"), 'Patterns'])
+        self.assertIn("🔴 Bearish Engulfing", patterns, "Bearish engulfing not detected where expected.")
 
-        result_df['Pattern'] = ''
-        result_df['Pattern_Strength'] = ''
+    def test_hammer(self):
+        result = PatternDetector.detect_patterns(self.df)
+        # At index 4 (2024-01-01 14:00), hammer is expected
+        patterns = str(result.loc[pd.Timestamp("2024-01-01 14:00"), 'Patterns'])
+        self.assertIn("🟢 Bullish Hammer", patterns, "Bullish hammer not detected where expected.")
 
-        required_cols = ['Open', 'High', 'Low', 'Close']
-        if not all(col in result_df.columns for col in required_cols):
-            logger.error(f"Missing required OHLC columns. Found: {result_df.columns.tolist()}")
-            return result_df
+    def test_doji(self):
+        result = PatternDetector.detect_patterns(self.df)
+        # At index 5 (2024-01-01 15:00), doji is expected
+        patterns = str(result.loc[pd.Timestamp("2024-01-01 15:00"), 'Patterns'])
+        self.assertIn("Doji", patterns, "Doji not detected where expected.")
 
-        open_prices = result_df['Open'].values
-        close_prices = result_df['Close'].values
+    def test_get_recent_patterns(self):
+        result = PatternDetector.detect_patterns(self.df)
+        patterns = PatternDetector.get_recent_patterns(result, lookback_periods=3)
+        self.assertTrue(any(isinstance(p, PatternResult) for p in patterns), "No PatternResult found in recent patterns.")
+        # Should find the hammer or doji in last 3
+        pattern_names = [p.name for p in patterns]
+        self.assertTrue(any("Hammer" in n or "Doji" in n for n in pattern_names), "Hammer or Doji not found in recent patterns.")
 
-        patterns = []
-        for i in range(1, len(result_df)):
-            if close_prices[i] > open_prices[i] and close_prices[i - 1] < open_prices[i - 1]:
-                # Bullish Engulfing
-                if close_prices[i] > open_prices[i - 1] and open_prices[i] < close_prices[i - 1]:
-                    patterns.append((i, 'Engulfing Pattern', 'Strong', True))
-            elif close_prices[i] < open_prices[i] and close_prices[i - 1] > open_prices[i - 1]:
-                # Bearish Engulfing
-                if open_prices[i] > close_prices[i - 1] and close_prices[i] < open_prices[i - 1]:
-                    patterns.append((i, 'Engulfing Pattern', 'Strong', False))
+    def test_missing_columns(self):
+        # Remove 'close' column to test error
+        broken_df = self.df.drop(columns=['close'])
+        with self.assertRaises(ValueError, msg="ValueError not raised for missing OHLC columns."):
+            PatternDetector.detect_patterns(broken_df)
 
-        for idx, name, strength, bullish in patterns:
-            direction = "🟢 Bullish" if bullish else "🔴 Bearish"
-            result_df.at[result_df.index[idx], 'Pattern'] = f"{direction} {name}"
-            result_df.at[result_df.index[idx], 'Pattern_Strength'] = strength
+    def test_disable_specific_pattern(self):
+        # Only detect Doji: Engulfing & Hammer should not appear
+        result = PatternDetector.detect_patterns(self.df, patterns=["Doji"])
+        self.assertNotIn("🟢 Bullish Engulfing", result.to_string(), "Bullish Engulfing detected when only Doji enabled.")
+        self.assertNotIn("🔴 Bearish Engulfing", result.to_string(), "Bearish Engulfing detected when only Doji enabled.")
+        self.assertNotIn("Hammer", result.to_string(), "Hammer detected when only Doji enabled.")
+        # Doji should still be present
+        patterns = str(result.loc[pd.Timestamp("2024-01-01 15:00"), 'Patterns'])
+        self.assertIn("Doji", patterns, "Doji not detected where expected when only Doji is enabled.")
 
-        logger.info(f"Detected {len(patterns)} engulfing patterns across {len(result_df)} candles")
-        return result_df
-
-    @classmethod
-    def get_recent_patterns(cls, df: pd.DataFrame, lookback_periods: int = 3) -> List[PatternResult]:
-        try:
-            if 'Pattern' not in df.columns:
-                return []
-
-            recent_df = df.tail(lookback_periods)
-            patterns = []
-
-            for idx, row in recent_df.iterrows():
-                if row['Pattern'] and row['Pattern'].strip():
-                    parts = row['Pattern'].split('|')
-                    for part in parts:
-                        part = part.strip()
-                        if part:
-                            is_bullish = "🟢 Bullish" in part
-                            name = part.replace("🟢 Bullish ", "").replace("🔴 Bearish ", "")
-                            patterns.append(PatternResult(
-                                name=name,
-                                strength=row.get('Pattern_Strength', 'Medium'),
-                                bullish=is_bullish,
-                                timestamp=idx if hasattr(idx, 'strftime') else pd.Timestamp.now()
-                            ))
-            return patterns
-
-        except Exception as e:
-            logger.error(f"Error extracting recent patterns: {e}")
-            return []
-
-def detect_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
-    return PatternDetector.detect_patterns(df)
-
-detect_patterns = PatternDetector.detect_patterns
+if __name__ == "__main__":
+    unittest.main()

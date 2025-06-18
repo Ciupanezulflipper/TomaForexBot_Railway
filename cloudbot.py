@@ -1,64 +1,79 @@
-from dotenv import load_dotenv
-load_dotenv()  # ✅ Load before anything else
-
 import os
 import logging
-from telegram.ext import ApplicationBuilder, CommandHandler, Application
-from eventdriven_scheduler import monitor_major_events
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, ContextTypes, JobQueue
+)
 from telegramalert import send_pattern_alerts, send_news_and_events
+from dotenv import load_dotenv
 
-# ─── Logging Setup ───
+# Load environment variables
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+if not TELEGRAM_TOKEN or TELEGRAM_CHAT_ID == 0:
+    raise ValueError("❌ TELEGRAM_TOKEN or TELEGRAM_CHAT_ID must be set correctly in .env")
+
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ─── Load Telegram Token ───
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0"))
+# --- Command: /start ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("🤖 Bot is running.")
+    except Exception as e:
+        logger.exception("Error in /start")
+        await update.message.reply_text(f"❌ Error: {e}")
 
-# ─── Telegram Command Handlers ───
-async def start(update, context):
-    await update.message.reply_text("👋 TomaForexBot is running. Use /scan or /status.")
+# --- Command: /scan ---
+async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        symbols = ["EURUSD", "XAUUSD", "US30"]
+        await update.message.reply_text("🔍 Running full scan...")
+        for symbol in symbols:
+            await send_pattern_alerts(symbol)
+            await send_news_and_events(symbol)
+    except Exception as e:
+        logger.exception("Error in /scan")
+        await update.message.reply_text(f"❌ Error: {e}")
 
-async def scan(update, context):
+# --- Command: /status ---
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("✅ Status: Alive and monitoring.")
+    except Exception as e:
+        logger.exception("Error in /status")
+        await update.message.reply_text(f"❌ Error: {e}")
+
+# --- Background Job (15 min interval) ---
+async def scheduled_job(context: ContextTypes.DEFAULT_TYPE):
     symbols = ["EURUSD", "XAUUSD", "US30"]
-    await update.message.reply_text("🔍 Running full scan on EURUSD, XAUUSD, US30...")
     for symbol in symbols:
-        await send_pattern_alerts(symbol)
-        await send_news_and_events(symbol)
+        try:
+            await send_pattern_alerts(symbol)
+            await send_news_and_events(symbol)
+        except Exception as e:
+            logger.exception(f"❌ Background job failed for {symbol}: {e}")
 
-async def status(update, context):
-    await update.message.reply_text("✅ Bot is online and scheduler is active.")
-
-# ─── Async Setup ───
-async def post_init(application: Application) -> None:
-    await application.bot.set_my_commands([
-        ("start", "Start the bot"),
-        ("scan", "Scan symbols"),
-        ("status", "Bot status"),
-    ])
-    application.create_task(monitor_major_events())
-
-# ─── Telegram App Setup ───
-def main() -> None:
-    logger.info("🚀 Launching bot...")
-
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
+# --- Main App ---
+async def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("status", status))
 
-    logger.info("🤖 Starting Telegram bot polling...")
-    app.run_polling()
+    app.job_queue.run_repeating(scheduled_job, interval=900, first=10)
 
-# ─── Entry Point ───
+    await app.run_polling()
+
+# --- Entrypoint ---
 if __name__ == "__main__":
     try:
-        main()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("👋 Gracefully shutting down...")
+        import asyncio
+        asyncio.run(main())
+    except Exception as e:
+        logger.exception("❌ Fatal error in main bot loop")
