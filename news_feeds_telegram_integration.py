@@ -9,17 +9,22 @@ import requests
 from dotenv import load_dotenv
 from datetime import datetime
 from news_signal_logic import analyze_news_headline
+from news_dedup import NewsDeduplicator  # ✅ NEW: import dedup class
 
+# --- Load environment variables ---
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# --- Init deduplication (60 min expiry) ---
+dedup = NewsDeduplicator(cache_file="news_sent_cache.json", expiry_minutes=60)
+
 # --- RSS Feeds ---
 RSS_FEEDS = [
-    "https://www.forexfactory.com/ff_calendar_thisweek.xml",  # ForexFactory Calendar (events)
-    "https://www.forexlive.com/feed/",                        # ForexLive News
-    "https://www.investing.com/rss/news_25.rss",              # Investing.com Market News
-    "https://tradingeconomics.com/calendar.rss",              # TradingEconomics Events
+    "https://www.forexfactory.com/ff_calendar_thisweek.xml",
+    "https://www.forexlive.com/feed/",
+    "https://www.investing.com/rss/news_25.rss",
+    "https://tradingeconomics.com/calendar.rss",
 ]
 
 # --- Telegram Send Function ---
@@ -38,31 +43,42 @@ def send_telegram_message(text):
 
 # --- Parse and Logic ---
 def fetch_and_analyze_feeds():
-    all_alerts = []
     print("[NEWS] Fetching headlines and analyzing...")
+    sent_count = 0
     for rss in RSS_FEEDS:
         feed = feedparser.parse(rss)
-        for entry in feed.entries[:7]:  # Only latest 7 per source
-            headline = entry.title
-            date = entry.get('published', entry.get('updated', ''))
+        for entry in feed.entries[:7]:
+            headline = entry.title.strip()
+            url = entry.get("link", "").strip() or headline
+            date = entry.get("published", entry.get("updated", ""))
             dt = ''
             if date:
                 try:
                     dt = str(datetime(*entry.published_parsed[:6]))
                 except Exception:
                     dt = date
+
+            # ✅ SKIP if already sent
+            if dedup.already_sent(headline, url):
+                print(f"[SKIP] Duplicate: {headline}")
+                continue
+
             logic = analyze_news_headline(headline)
-            alert_lines = [f"*{headline}* ({dt})"]
+            if not logic:
+                continue
+
+            alert_lines = [f"*{headline}* ({dt})", url]
             for result in logic:
                 alert_lines.append(
                     f" - {result['asset']}: {result['signal']} (score={result['score']}) | {result['reason']}"
                 )
-            all_alerts.append('\n'.join(alert_lines))
-    return all_alerts
+            alert_msg = '\n'.join(alert_lines)
+            send_telegram_message(alert_msg)
+            dedup.mark_sent(headline, url)
+            sent_count += 1
+    print(f"[NEWS] Sent {sent_count} news alerts.")
+    return sent_count
 
 # --- Main/Run Once ---
 if __name__ == "__main__":
-    alerts = fetch_and_analyze_feeds()
-    print(f"[NEWS] Sending {len(alerts)} alerts to Telegram...")
-    for alert in alerts:
-        send_telegram_message(alert)
+    fetch_and_analyze_feeds()
